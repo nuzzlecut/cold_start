@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Flip Move Test</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: #20004c;
+        color: #fff;
+        font-family: sans-serif;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      .focusbox {
+        position: absolute;
+        top: 300px;
+        left: 90px;
+        width: 220px;
+        height: 300px;
+        border: 3px solid red;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- React / ReactDOM / Babel -->
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+
+    <!-- Flip Move -->
+    <script src="https://unpkg.com/react-flip-move@3.0.4/dist/react-flip-move.js"></script>
+
+    <script type="text/babel">
+      const { default: FlipMove } = window.ReactFlipMove;
+
+      function Page1() {
+        const [tiles, setTiles] = React.useState(baseTiles);
+        const [focusIndex, setFocusIndex] = React.useState(0);
+
+        const backTile = {
+          id: "back_tile",
+          title: "Back to Beginning",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/back_to_beginning.png",
+          isBack: true,
+        };
+        const rendered = [...tiles, backTile];
+
+        React.useEffect(() => {
+          function onKey(e) {
+            if (e.key === "ArrowRight") {
+              setFocusIndex((p) => Math.min(p + 1, rendered.length - 1));
+            } else if (e.key === "ArrowLeft") {
+              setFocusIndex((p) => Math.max(p - 1, 0));
+            } else if (e.key === "Enter") {
+              handleEnter(focusIndex);
+            }
+          }
+          window.addEventListener("keydown", onKey);
+          return () => window.removeEventListener("keydown", onKey);
+        }, [focusIndex, rendered]);
+
+        function handleEnter(idx) {
+          if (idx === rendered.length - 1) {
+            // "Back"
+            setFocusIndex(0);
+            return;
+          }
+          const tile = rendered[idx];
+          if (!tile) return;
+
+          // Insert expansions 6 away
+          if (tile.expansions) {
+            const ins = tile.expansions
+              .map(id => expansionsData[id])
+              .filter(Boolean)
+              .filter(exp => !tiles.some(x => x.id === exp.id));
+            if (ins.length > 0) {
+              const insertIndex = Math.min(idx + 6, tiles.length);
+              const newArr = [...tiles];
+              newArr.splice(insertIndex, 0, ...ins);
+              setTiles(newArr);
+            }
+          }
+        }
+
+        // Focus offset
+        const TILE_W = 205;
+        const TILE_S = 15;
+        const offsetX = -(focusIndex * (TILE_W + TILE_S));
+
+        return (
+          <div style={{ position: "relative", width: 1920, height: 1080 }}>
+            <div className="focusbox" />
+            <div style={{
+              position: "absolute",
+              top: 50, left: 50,
+              fontSize: 24,
+            }}>
+              FlipMove Minimal Demo<br/>
+              Left/Right arrows to navigate, Enter to insert expansions<br/>
+              Focus Index: {focusIndex}
+            </div>
+
+            <div style={{
+              position: "absolute", top: 300, left: 300,
+              width: 1200, height: 300,
+              overflow: "hidden",
+            }}>
+              <div style={{
+                display: "flex",
+                flexDirection: "row",
+                transform: `translateX(${offsetX}px)`,
+                transition: "transform 200ms ease-out",
+              }}>
+                <FlipMove typeName={null} duration={400} easing="ease-out">
+                  {rendered.map(tileObj => (
+                    <div
+                      key={tileObj.id}
+                      style={{
+                        flex: "0 0 auto",
+                        width: TILE_W,
+                        height: 285,
+                        marginRight: TILE_S,
+                        position: "relative",
+                        border: "1px solid #999",
+                      }}
+                    >
+                      <img
+                        src={tileObj.image}
+                        alt={tileObj.title}
+                        style={{ width: "100%", height: "100%" }}
+                      />
+                    </div>
+                  ))}
+                </FlipMove>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function App() {
+        return <Page1 />;
+      }
+
+      // Minimal base + expansions
+      const baseTiles = [
+        {
+          id: "t1",
+          title: "Wicked",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/1a.png",
+          expansions: ["t4", "t5"],
+        },
+        {
+          id: "t2",
+          title: "Deadpool & Wolverine",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/2a.png",
+          expansions: ["t6"],
+        },
+        {
+          id: "t3",
+          title: "The Kardashians",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/3a.png",
+          expansions: [],
+        }
+      ];
+
+      const expansionsData = {
+        "t4": {
+          id: "t4",
+          title: "Harry Potter",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/1b.png",
+        },
+        "t5": {
+          id: "t5",
+          title: "Lord of the Rings",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/1c.png",
+        },
+        "t6": {
+          id: "t6",
+          title: "John Wick",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/2b.png",
+        },
+      };
+
+      ReactDOM.render(<App />, document.getElementById("root"));
+    </script>
+  </body>
+</html>
