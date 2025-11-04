@@ -5,30 +5,73 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Cold Start – Prototype</title>
 <style>
-  :root { --bg:#20004C; --bleed: 32px; } /* increase/decrease bleed if needed */
+  :root { --bg:#20004C; --bleed:32px; } /* increase bleed to 48/64 if you still see borders */
   html,body{ margin:0; height:100%; background:var(--bg); overflow:hidden; }
   .wrap{ position:fixed; inset:0; overflow:hidden; background:var(--bg); }
-  .frame{
+  iframe#figma{
     position:absolute;
-    /* crop a little past each edge to hide Figma’s border */
     top: calc(-1 * var(--bleed));
     left: calc(-1 * var(--bleed));
     width: calc(100% + var(--bleed) * 2);
     height: calc(100% + var(--bleed) * 2);
-    border:0;
-    display:block;
-    background:var(--bg);
+    border:0; display:block; background:var(--bg);
   }
+  .fsBtn{
+    position:fixed; right:16px; bottom:16px;
+    padding:10px 14px; border-radius:10px;
+    background:rgba(255,255,255,.12); color:#fff;
+    border:1px solid rgba(255,255,255,.16);
+    font: 13px/1.1 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    cursor:pointer; user-select:none; transition:.2s;
+  }
+  .fsBtn:hover{ background:rgba(255,255,255,.18); }
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <iframe
-      class="frame"
-      allow="fullscreen; clipboard-write"
+  <div class="wrap" id="wrap">
+    <iframe id="figma"
+      src="https://embed.figma.com/proto/WWMOEdZYa6nPMR2TqbyjVT/Cold-Start?page-id=759%3A23318&node-id=759-23569&starting-point-node-id=759%3A23569&scaling=cover&content-scaling=fixed&hide-ui=1&embed-host=share"
+      allow="clipboard-write; fullscreen"
       allowfullscreen
-      src="https://embed.figma.com/proto/WWMOEdZYa6nPMR2TqbyjVT/Cold-Start?page-id=759%3A23318&node-id=759-23569&starting-point-node-id=759%3A23569&scaling=cover&content-scaling=fixed&hide-ui=1&embed-host=share">
-    </iframe>
+    ></iframe>
   </div>
+
+  <button class="fsBtn" id="fsBtn">Enter Fullscreen</button>
+
+<script>
+  const btn = document.getElementById('fsBtn');
+  const root = document.documentElement;
+
+  async function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      await root.requestFullscreen?.();    // user gesture required
+      btn.textContent = 'Exit Fullscreen';
+    } else {
+      await document.exitFullscreen?.();
+      btn.textContent = 'Enter Fullscreen';
+    }
+  }
+
+  // Click the button to enter/exit fullscreen (works across browsers)
+  btn.addEventListener('click', toggleFullscreen);
+
+  // Double-click anywhere to toggle as well
+  document.addEventListener('dblclick', toggleFullscreen);
+
+  // Optional: hide the button a few seconds after entering fullscreen
+  document.addEventListener('fullscreenchange', () => {
+    if (document.fullscreenElement) {
+      btn.style.opacity = '0';
+      setTimeout(() => (btn.style.display = 'none'), 250);
+    } else {
+      btn.style.display = 'block';
+      btn.style.opacity = '1';
+      btn.textContent = 'Enter Fullscreen';
+    }
+  });
+
+  // If you still see borders, bump the bleed:
+  // document.documentElement.style.setProperty('--bleed','48px')
+</script>
 </body>
 </html>
