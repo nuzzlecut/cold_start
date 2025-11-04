@@ -1,26 +1,134 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TV Shell – Figma + HTML</title>
 <style>
-  html,body{margin:0;height:100%;background:#20004C;overflow:hidden}
-  iframe{position:fixed;inset:0;border:0;width:100vw;height:100vh;background:#20004C}
+  :root {
+    --bg:#20004C;          /* Roku purple background */
+    --overscan: 1.035;     /* >1 crops off Figma’s inner “border”; tweak 1.02–1.06 */
+  }
+  html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+  /* Full-window canvas that scales a 1920x1080 stage using cover-fit */
+  .viewport {position:fixed; inset:0; display:grid; place-items:center; background:var(--bg); overflow:hidden;}
+  .stage {
+    position:relative; width:1920px; height:1080px;
+    transform-origin:center center;
+    /* scale set by JS so the 1920×1080 fills the window with no borders */
+  }
+
+  /* Layers (stacked) */
+  .layer {position:absolute; inset:0; overflow:hidden; background:#000;}
+  .hidden {display:none;}
+
+  /* Figma layer: overscan to hide its internal letterboxing/padding */
+  .figma-wrap { position:absolute; inset:-3%; transform:scale(var(--overscan)); transform-origin:center; }
+  .figma-wrap iframe { position:absolute; inset:0; width:100%; height:100%; border:0; background:#000; }
+
+  /* HTML app layer: full-bleed iframe or your own DOM */
+  .app-wrap iframe { position:absolute; inset:0; width:100%; height:100%; border:0; background:#000; }
+
+  /* Minimal controls (you can remove once wired via postMessage) */
+  .controls { position:fixed; top:12px; right:12px; display:flex; gap:8px; z-index:5; }
+  .btn {
+    padding:10px 14px; border-radius:10px;
+    background:rgba(255,255,255,.12); color:#fff;
+    border:1px solid rgba(255,255,255,.16); cursor:pointer;
+  }
+
+  /* Fullscreen gate (required user gesture) */
+  .gate { position:fixed; inset:0; display:grid; place-items:center; background:var(--bg); color:#fff; z-index:10; }
+  .gate .btn { font-size:16px; }
 </style>
 </head>
 <body>
-<iframe
-  src="https://embed.figma.com/proto/WWMOEdZYa6nPMR2TqbyjVT/Cold-Start
-?page-id=759%3A23318
-&node-id=759-23569
-&p=f
-&scaling=cover
-&content-scaling=fixed
-&hide-ui=1
-&starting-point-node-id=759%3A23569
-&embed-host=share"
-  allow="fullscreen; clipboard-write"
-  allowfullscreen>
-</iframe>
+
+<!-- Fullscreen gate -->
+<div class="gate" id="gate"><button class="btn">Click to begin (fullscreen)</button></div>
+
+<!-- Optional quick controls for testing -->
+<div class="controls" id="controls">
+  <button class="btn" data-route="figma">Show Figma</button>
+  <button class="btn" data-route="app">Show HTML</button>
+</div>
+
+<div class="viewport">
+  <div class="stage" id="stage">
+    <!-- Figma layer -->
+    <div class="layer" id="figmaLayer">
+      <div class="figma-wrap">
+        <iframe
+          src="https://embed.figma.com/proto/WWMOEdZYa6nPMR2TqbyjVT/Cold-Start?page-id=759%3A23318&node-id=759-23569&starting-point-node-id=759%3A23569&scaling=cover&content-scaling=fixed&hide-ui=1&embed-host=share"
+          allow="clipboard-write; fullscreen"
+          allowfullscreen
+        ></iframe>
+      </div>
+    </div>
+
+    <!-- Your rich HTML app layer -->
+    <div class="layer hidden" id="appLayer">
+      <div class="app-wrap">
+        <!-- Replace src with your app (can be same-origin or another host) -->
+        <iframe src="https://your-rich-html-app.example.com"></iframe>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // === Cover-fit scaling for a 1920×1080 stage (no borders) ===
+  const BASE_W = 1920, BASE_H = 1080;
+  const stage = document.getElementById('stage');
+
+  function layout() {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const scale = Math.max(vw/BASE_W, vh/BASE_H); // cover
+    stage.style.transform = `scale(${scale})`;
+  }
+  addEventListener('resize', layout); layout();
+
+  // === Route switching (Figma <-> App) ===
+  const figmaLayer = document.getElementById('figmaLayer');
+  const appLayer = document.getElementById('appLayer');
+
+  function show(route) {
+    if (route === 'app') {
+      figmaLayer.classList.add('hidden');
+      appLayer.classList.remove('hidden');
+    } else {
+      appLayer.classList.add('hidden');
+      figmaLayer.classList.remove('hidden');
+    }
+  }
+
+  // Buttons for quick testing
+  document.getElementById('controls').addEventListener('click', (e) => {
+    const route = e.target.getAttribute('data-route');
+    if (route) show(route);
+  });
+
+  // Allow Figma or your app to trigger the switch via postMessage
+  window.addEventListener('message', (e) => {
+    if (e?.data === 'launchExperience') show('app');
+    if (e?.data === 'returnToPrototype') show('figma');
+  });
+
+  // === Fullscreen (must be triggered by click) ===
+  const gate = document.getElementById('gate');
+  gate.addEventListener('click', async () => {
+    if (!document.fullscreenElement) {
+      await document.documentElement.requestFullscreen?.();
+    }
+    gate.style.display = 'none';
+    setTimeout(layout, 50);
+  });
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) {
+      gate.style.display = 'grid'; // show again if user hits ESC
+      layout();
+    }
+  });
+</script>
 </body>
 </html>
