@@ -3,75 +3,47 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Cold Start – Prototype</title>
+<title>Prototype – Fullscreen</title>
 <style>
-  :root { --bg:#20004C; --bleed:32px; } /* increase bleed to 48/64 if you still see borders */
-  html,body{ margin:0; height:100%; background:var(--bg); overflow:hidden; }
-  .wrap{ position:fixed; inset:0; overflow:hidden; background:var(--bg); }
-  iframe#figma{
-    position:absolute;
-    top: calc(-1 * var(--bleed));
-    left: calc(-1 * var(--bleed));
-    width: calc(100% + var(--bleed) * 2);
-    height: calc(100% + var(--bleed) * 2);
-    border:0; display:block; background:var(--bg);
-  }
-  .fsBtn{
-    position:fixed; right:16px; bottom:16px;
-    padding:10px 14px; border-radius:10px;
-    background:rgba(255,255,255,.12); color:#fff;
-    border:1px solid rgba(255,255,255,.16);
-    font: 13px/1.1 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    cursor:pointer; user-select:none; transition:.2s;
-  }
-  .fsBtn:hover{ background:rgba(255,255,255,.18); }
+  :root { --bg:#20004C; --bleed:32px; }
+  html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
+  .wrap{position:fixed;inset:0;overflow:hidden;background:var(--bg);}
+  iframe{position:absolute;top:calc(-1*var(--bleed));left:calc(-1*var(--bleed));
+         width:calc(100% + var(--bleed)*2);height:calc(100% + var(--bleed)*2);
+         border:0;background:var(--bg);}
+  .gate{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);color:#fff;cursor:pointer}
+  .gate .btn{padding:14px 18px;border-radius:12px;border:1px solid rgba(255,255,255,.16);
+             background:rgba(255,255,255,.12)}
+  .hidden{display:none}
 </style>
 </head>
 <body>
-  <div class="wrap" id="wrap">
-    <iframe id="figma"
+  <div class="wrap">
+    <iframe
       src="https://embed.figma.com/proto/WWMOEdZYa6nPMR2TqbyjVT/Cold-Start?page-id=759%3A23318&node-id=759-23569&starting-point-node-id=759%3A23569&scaling=cover&content-scaling=fixed&hide-ui=1&embed-host=share"
-      allow="clipboard-write; fullscreen"
+      allow="fullscreen; clipboard-write"
       allowfullscreen
     ></iframe>
   </div>
 
-  <button class="fsBtn" id="fsBtn">Enter Fullscreen</button>
+  <div class="gate" id="gate" tabindex="0">
+    <div class="btn">Click to begin (fullscreen)</div>
+  </div>
 
 <script>
-  const btn = document.getElementById('fsBtn');
-  const root = document.documentElement;
-
-  async function toggleFullscreen() {
+  const gate = document.getElementById('gate');
+  async function goFS() {
     if (!document.fullscreenElement) {
-      await root.requestFullscreen?.();    // user gesture required
-      btn.textContent = 'Exit Fullscreen';
-    } else {
-      await document.exitFullscreen?.();
-      btn.textContent = 'Enter Fullscreen';
+      await document.documentElement.requestFullscreen?.();
     }
+    gate.classList.add('hidden');
   }
-
-  // Click the button to enter/exit fullscreen (works across browsers)
-  btn.addEventListener('click', toggleFullscreen);
-
-  // Double-click anywhere to toggle as well
-  document.addEventListener('dblclick', toggleFullscreen);
-
-  // Optional: hide the button a few seconds after entering fullscreen
+  gate.addEventListener('click', goFS);
+  gate.addEventListener('keydown', goFS); // any key also works
   document.addEventListener('fullscreenchange', () => {
-    if (document.fullscreenElement) {
-      btn.style.opacity = '0';
-      setTimeout(() => (btn.style.display = 'none'), 250);
-    } else {
-      btn.style.display = 'block';
-      btn.style.opacity = '1';
-      btn.textContent = 'Enter Fullscreen';
-    }
+    if (!document.fullscreenElement) gate.classList.remove('hidden'); // show again if user Escapes
   });
-
-  // If you still see borders, bump the bleed:
-  // document.documentElement.style.setProperty('--bleed','48px')
+  // If you still see faint borders, increase --bleed to 48 or 64.
 </script>
 </body>
 </html>
