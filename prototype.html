@@ -3,50 +3,121 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Cold-Start Unified Prototype</title>
+<title>TV Shell – Figma + HTML (Top-Left 1920×1080)</title>
 <style>
-  html,body{
-    margin:0;height:100%;width:100%;
-    background:#20004C;overflow:hidden;
+  :root { --bg:#20004C; --overscan:1.00; } /* bump to 1.02–1.04 if Figma shows internal padding */
+
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    height: 100%;
+    overflow: hidden;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   }
-  /* fixed 1920×1080 “TV canvas” scaled down to fit window */
-  .stage{
-    position:fixed;top:50%;left:50%;
-    width:1920px;height:1080px;
-    transform-origin:center center;
+
+  /* Fixed 1920×1080 canvas anchored to (0,0) */
+  .stage {
+    position: fixed;
+    top: 0; left: 0;
+    width: 1920px;
+    height: 1080px;
+    background: #000; /* safety */
+    overflow: hidden;
   }
-  iframe{
-    position:absolute;inset:0;border:0;width:100%;height:100%;
-    background:#20004C;
+
+  .layer { position: absolute; inset: 0; }
+  .hidden { display: none; }
+
+  /* Figma layer */
+  .figma-inner {
+    position: absolute;
+    inset: 0;
+    transform: scale(var(--overscan));
+    transform-origin: top left; /* overscan from (0,0) if needed */
+  }
+  .figma-inner iframe,
+  .app-inner iframe {
+    position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000;
+  }
+
+  /* Minimal on-screen toggle for testing (remove for production) */
+  .controls {
+    position: fixed; top: 8px; left: 8px; z-index: 10;
+    display: flex; gap: 8px;
+  }
+  .btn {
+    padding: 8px 10px; border-radius: 8px;
+    background: rgba(255,255,255,.12); color: #fff;
+    border: 1px solid rgba(255,255,255,.16); cursor: pointer;
+  }
+
+  /* Fullscreen gate (required one click) */
+  .gate {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    background: var(--bg); color: #fff; z-index: 20;
   }
 </style>
 </head>
 <body>
-  <div class="stage" id="stage">
-    <iframe
-      src="https://embed.figma.com/proto/WWMOEdZYa6nPMR2TqbyjVT/Cold-Start?page-id=759%3A23318&node-id=759-23569&p=f&viewport=25%2C99%2C0.97&scaling=contain&content-scaling=fixed&starting-point-node-id=759%3A23569&hide-ui=1&embed-host=share"
-      allow="fullscreen; clipboard-write"
-      allowfullscreen>
-    </iframe>
+
+<div class="gate" id="gate"><button class="btn">Click to begin (fullscreen)</button></div>
+
+<div class="controls">
+  <button class="btn" data-route="figma">Show Figma</button>
+  <button class="btn" data-route="app">Show HTML</button>
+</div>
+
+<div class="stage" id="stage">
+  <!-- Figma layer -->
+  <div class="layer" id="figmaLayer">
+    <div class="figma-inner">
+      <iframe
+        id="figma"
+        src="https://embed.figma.com/proto/WWMOEdZYa6nPMR2TqbyjVT/Cold-Start?page-id=759%3A23318&node-id=759-23569&p=f&scaling=contain&content-scaling=fixed&hide-ui=1&starting-point-node-id=759%3A23569&embed-host=share"
+        allow="clipboard-write; fullscreen"
+        allowfullscreen
+      ></iframe>
+    </div>
   </div>
 
-<script>
-  const stage=document.getElementById('stage');
-  const BASE_W=1920, BASE_H=1080;
-  function layout(){
-    const vw=window.innerWidth, vh=window.innerHeight;
-    // uniform scale: fit entire 16:9 frame, never overflow
-    const scale=Math.min(vw/BASE_W, vh/BASE_H);
-    stage.style.transform=`translate(-50%,-50%) scale(${scale})`;
-  }
-  addEventListener('resize',layout);
-  layout();
+  <!-- Your rich HTML app -->
+  <div class="layer hidden" id="appLayer">
+    <div class="app-inner">
+      <!-- swap this src to your live app -->
+      <iframe src="https://example.com/your-html-app"></iframe>
+    </div>
+  </div>
+</div>
 
-  // Optional fullscreen on click
-  document.body.addEventListener('click',async()=>{
-    if(!document.fullscreenElement){
+<script>
+  // Fullscreen gate (must be a user gesture)
+  const gate = document.getElementById('gate');
+  gate.addEventListener('click', async () => {
+    if (!document.fullscreenElement) {
       await document.documentElement.requestFullscreen?.();
     }
+    gate.style.display = 'none';
+  });
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) gate.style.display = 'grid';
+  });
+
+  // Swap layers without navigating (keeps fullscreen)
+  const figmaLayer = document.getElementById('figmaLayer');
+  const appLayer   = document.getElementById('appLayer');
+  function show(route) {
+    if (route === 'app') { figmaLayer.classList.add('hidden'); appLayer.classList.remove('hidden'); }
+    else                 { appLayer.classList.add('hidden');   figmaLayer.classList.remove('hidden'); }
+  }
+  // Buttons for quick testing
+  document.querySelector('.controls').addEventListener('click', (e) => {
+    const r = e.target.getAttribute('data-route'); if (r) show(r);
+  });
+
+  // Allow Figma/app to trigger swap via postMessage
+  window.addEventListener('message', (e) => {
+    if (e.data === 'launchExperience') show('app');
+    if (e.data === 'returnToPrototype') show('figma');
   });
 </script>
 </body>
