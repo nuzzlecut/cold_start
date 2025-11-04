@@ -3,23 +3,26 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Prototype – Fullscreen</title>
+<title>Cold Start – Full-bleed</title>
 <style>
-  :root { --bg:#20004C; --bleed:32px; }
-  html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
-  .wrap{position:fixed;inset:0;overflow:hidden;background:var(--bg);}
-  iframe{position:absolute;top:calc(-1*var(--bleed));left:calc(-1*var(--bleed));
-         width:calc(100% + var(--bleed)*2);height:calc(100% + var(--bleed)*2);
-         border:0;background:var(--bg);}
-  .gate{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);color:#fff;cursor:pointer}
-  .gate .btn{padding:14px 18px;border-radius:12px;border:1px solid rgba(255,255,255,.16);
-             background:rgba(255,255,255,.12)}
-  .hidden{display:none}
+  :root { --bg:#20004C; }
+  html,body{ margin:0; height:100%; background:var(--bg); overflow:hidden; }
+  .wrap{ position:fixed; inset:0; overflow:hidden; background:var(--bg); }
+  #figma{
+    position:absolute; border:0; display:block; background:var(--bg);
+    /* width/height/top/left are set by JS for perfect cover-fit */
+  }
+  /* Gate for the required user gesture to enter fullscreen */
+  .gate{ position:fixed; inset:0; display:grid; place-items:center;
+         background:var(--bg); color:#fff; cursor:pointer; font:16px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial; }
+  .btn{ padding:14px 18px; border-radius:12px; border:1px solid rgba(255,255,255,.16);
+        background:rgba(255,255,255,.12) }
+  .hidden{ display:none; }
 </style>
 </head>
 <body>
   <div class="wrap">
-    <iframe
+    <iframe id="figma"
       src="https://embed.figma.com/proto/WWMOEdZYa6nPMR2TqbyjVT/Cold-Start?page-id=759%3A23318&node-id=759-23569&starting-point-node-id=759%3A23569&scaling=cover&content-scaling=fixed&hide-ui=1&embed-host=share"
       allow="fullscreen; clipboard-write"
       allowfullscreen
@@ -31,19 +34,52 @@
   </div>
 
 <script>
+  // === Set this to your Figma frame size ===
+  const BASE_W = 1920;
+  const BASE_H = 1080;
+
+  const iframe = document.getElementById('figma');
   const gate = document.getElementById('gate');
+
+  function layout() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    // cover-fit scale: fill window, crop overflow (no borders)
+    const scale = Math.max(vw / BASE_W, vh / BASE_H);
+    const w = Math.ceil(BASE_W * scale);
+    const h = Math.ceil(BASE_H * scale);
+    const left = Math.round((vw - w) / 2);
+    const top  = Math.round((vh - h) / 2);
+    Object.assign(iframe.style, {
+      width:  w + 'px',
+      height: h + 'px',
+      left:   left + 'px',
+      top:    top  + 'px'
+    });
+  }
+
+  addEventListener('resize', layout);
+  layout();
+
+  // Fullscreen requires a user gesture
   async function goFS() {
     if (!document.fullscreenElement) {
       await document.documentElement.requestFullscreen?.();
     }
     gate.classList.add('hidden');
+    // Relayout after UI chrome changes in FS
+    setTimeout(layout, 50);
   }
   gate.addEventListener('click', goFS);
-  gate.addEventListener('keydown', goFS); // any key also works
+  gate.addEventListener('keydown', (e) => { if (e.key) goFS(); });
+
+  // If user exits fullscreen (Esc), show gate again
   document.addEventListener('fullscreenchange', () => {
-    if (!document.fullscreenElement) gate.classList.remove('hidden'); // show again if user Escapes
+    if (!document.fullscreenElement) {
+      gate.classList.remove('hidden');
+      layout();
+    }
   });
-  // If you still see faint borders, increase --bleed to 48 or 64.
 </script>
 </body>
 </html>
