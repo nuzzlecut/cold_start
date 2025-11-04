@@ -1,0 +1,2559 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <title>Roku Cold Start</title>
+    <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/nuzzlecut/assets/main/favicon.png">
+    <style>
+      * { 
+        margin: 0; 
+        padding: 0; 
+        box-sizing: border-box; 
+      }
+      body {
+        font-family: sans-serif;
+        background: #20004c;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        color: #fff;
+      }
+      /* Fade-in animation for new expansion tiles */
+      .fade-in {
+        opacity: 0;
+        animation: fadeIn 500ms ease-out forwards;
+      }
+      @keyframes fadeIn {
+        to { opacity: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- React + Babel -->
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+
+    <script type="text/babel">
+      /* ------------------------------------------------------------------ */
+      /* PAGE 1 – Main Content Selection (with fade-in for expansion tiles)   */
+      /* ------------------------------------------------------------------ */
+      function Page1({ onNavigateNext, selectedInit }) {
+  // ─── Main tile state ────────────────────────────────────────────────
+  const [tiles, setTiles] = React.useState(initialTileData);
+  const [selected, setSelected] = React.useState(selectedInit);
+  const [focusIdx, setFocusIdx] = React.useState(0);
+  const [area, setArea] = React.useState("tiles"); // "tiles" or "button"
+  const [newTileIds, setNewTileIds] = React.useState([]);
+
+  // ─── Show-More / batch-2 state ───────────────────────────────────────
+  const [secondBatchLoaded, setSecondBatchLoaded] = React.useState(false);
+  // merge expansion-data maps so both batches work the same
+  const allExpansionTileData = {
+    ...expansionTileData,
+    ...expansionTileDataBatch2,
+  };
+
+  // the Show More “tile”
+  const showMore = {
+    id: "show_more",
+    title: "Show More",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/show_more.png",
+    isShowMore: true,
+  };
+
+  // tiles to render: append Show More until it’s been used
+  const rendered = React.useMemo(
+    () => (secondBatchLoaded ? tiles : [...tiles, showMore]),
+    [tiles, secondBatchLoaded]
+  );
+
+  // keyboard navigation
+  React.useEffect(() => {
+    function onKey(e) {
+      if (area === "tiles") {
+        if (e.key === "ArrowRight")
+          setFocusIdx(i => Math.min(i + 1, rendered.length - 1));
+        else if (e.key === "ArrowLeft")
+          setFocusIdx(i => Math.max(i - 1, 0));
+        else if (e.key === "ArrowDown")
+          setArea("button");
+        else if (e.key === "Enter")
+          handleEnter(focusIdx);
+      } else {
+        if (e.key === "ArrowUp")
+          setArea("tiles");
+        else if (e.key === "Enter")
+          onNavigateNext(selected);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [area, focusIdx, rendered, selected]);
+
+  function handleEnter(idx) {
+    const t = rendered[idx];
+    // ─── Show More was selected ────────────────────────────────────────
+    if (t && t.isShowMore) {
+      // grab only those in batch2 we haven’t yet shown
+      const newBatch = initialTileDataBatch2.filter(
+        nt => !tiles.some(o => o.id === nt.id)
+      );
+      if (newBatch.length) {
+        // append batch2
+        setTiles(old => [...old, ...newBatch]);
+        // fade-in those
+        const newIds = newBatch.map(tile => tile.id);
+        setNewTileIds(newIds);
+        setTimeout(() => setNewTileIds([]), 310);
+      }
+      // no more Show More
+      setSecondBatchLoaded(true);
+      return;
+    }
+
+    // ─── regular tile selection / expansion ────────────────────────────
+    if (!t || t.isShowMore) return;
+
+    // toggle like/unlike
+    if (selected.includes(t.title)) {
+      setSelected(s => s.filter(x => x !== t.title));
+    } else {
+      setSelected(s => [...s, t.title]);
+      // expansion tiles?
+      if (t.expansionTiles) {
+        const add = t.expansionTiles
+          .map(id => allExpansionTileData[id])
+          .filter(Boolean)
+          .filter(et => !tiles.some(o => o.title === et.title));
+        if (add.length) {
+          const insertAt = Math.min(idx + 7, tiles.length);
+          const clone = [...tiles];
+          clone.splice(insertAt, 0, ...add);
+          setTiles(clone);
+          const newIds = add.map(tile => tile.id);
+          setNewTileIds(newIds);
+          setTimeout(() => setNewTileIds([]), 310);
+        }
+      }
+    }
+  }
+
+  // visual constants
+  const TILE_W = 183, TILE_H = 274, GAP = 24;
+  const offset = -(focusIdx * (TILE_W + GAP));
+  const cur = rendered[focusIdx] || {};
+  const metaTitle = cur.isShowMore ? "" : cur.title;
+  const metaInfo = cur.isShowMore
+    ? ""
+    : [cur.year, cur.rating, ...(cur.descriptors || [])]
+        .filter(Boolean)
+        .join(" • ");
+  const nextAsset = area === "button"
+    ? "https://raw.githubusercontent.com/nuzzlecut/assets/main/next_on.png"
+    : "https://raw.githubusercontent.com/nuzzlecut/assets/main/next_off.png";
+
+  return (
+    <div style={{ position: "relative", width: 1920, height: 1080 }}>
+      <img
+        src="https://raw.githubusercontent.com/nuzzlecut/assets/main/back-arrow.png"
+        style={{ position: "absolute", left: 96, top: 54, width: 176, height: 55 }}
+        alt="back"
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 144,
+          top: 193,
+          fontSize: 72,
+          fontWeight: 600,
+          lineHeight: "84px",
+        }}
+      >
+        What do you like to watch?
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          left: 144,
+          top: 289,
+          fontSize: 33,
+          fontWeight: 300,
+          lineHeight: "45px",
+        }}
+      >
+        Choose a few titles for better recommendations
+      </div>
+
+      {area === "tiles" && (
+        <img
+          src="https://raw.githubusercontent.com/nuzzlecut/assets/main/content_focus.png"
+          style={{ position: "absolute", left: 132, top: 385 }}
+          alt="focus"
+        />
+      )}
+
+      <div
+        style={{
+          position: "absolute",
+          left: 144,
+          top: 397,
+          width: 1824,
+          height: TILE_H,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            transform: `translateX(${offset}px)`,
+            transition: "transform 150ms ease-out",
+          }}
+        >
+          {rendered.map(t => {
+            const liked = selected.includes(t.title);
+            return (
+              <div
+                key={t.id}
+                style={{
+                  flex: "0 0 auto",
+                  width: TILE_W,
+                  height: TILE_H,
+                  marginRight: GAP,
+                  position: "relative",
+                }}
+              >
+                {newTileIds.includes(t.id) ? (
+                  <div className="fade-in" style={{ width: "100%", height: "100%" }}>
+                    <img src={t.image} alt={t.title} style={{ width: "100%", height: "100%" }} />
+                  </div>
+                ) : (
+                  <img src={t.image} alt={t.title} style={{ width: "100%", height: "100%" }} />
+                )}
+                {liked && !t.isShowMore && (
+                  <img
+                    src="https://raw.githubusercontent.com/nuzzlecut/assets/main/liked_overlay2.png"
+                    style={{ position: "absolute", top: 0, right: 0, width: 40, height: 40 }}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 144,
+          top: 707,
+          fontSize: 33,
+          fontWeight: 600,
+          lineHeight: "45px",
+        }}
+      >
+        {metaTitle}
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          left: 144,
+          top: 751,
+          fontSize: 30,
+          fontWeight: 300,
+          lineHeight: "45px",
+        }}
+      >
+        {metaInfo}
+      </div>
+
+      <div
+        onClick={() => onNavigateNext(selected)}
+        style={{
+          position: "absolute",
+          left: 144,
+          top: 845,
+          width: 381,
+          height: 72,
+          cursor: "pointer",
+          background: `url(${nextAsset}) 0 0/100% 100% no-repeat`,
+        }}
+      />
+    </div>
+  );
+}
+      
+      /* ------------------------------------------------------------------ */
+      /* MEMOIZED ROW COMPONENT for SportsSelectionPage (Working Version)     */
+      /* ------------------------------------------------------------------ */
+      const Row = React.memo(function Row({ top, startIdx, offsetX, tiles, sel, TILE_W, TILE_H, GAP }) {
+        return (
+          <div style={{ position: "absolute", left: 144, top, width: 1824, height: TILE_H, overflow: "hidden" }}>
+            <div style={{ display: "flex", transform: `translateX(${offsetX}px)`, transition: "transform 150ms ease-out" }}>
+              {tiles.filter((_, i) => i % 2 === startIdx).map(t => (
+                <div key={t.id} style={{ flex: "0 0 auto", width: TILE_W, height: TILE_H, marginRight: GAP, position: "relative" }}>
+                  <img src={t.image} alt={t.title} style={{ width: "100%", height: "100%" }}/>
+                  {sel.includes(t.title) && (
+                    <img src="https://raw.githubusercontent.com/nuzzlecut/assets/main/liked_overlay2.png"
+                         style={{ position: "absolute", top: 0, right: 0, width: 40, height: 40 }}/>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      });
+      
+/* ------------------------------------------------------------------ */
+/* SPORTS-SELECTION PAGE – single-row carousel (v2)                   */
+/* ------------------------------------------------------------------ */
+function SportsSelectionPage({ onNextPressed, selectedInit }) {
+  // ─── static tile data ─────────────────────────────────────────────
+  const tiles = [
+    { id: "sp1c",  title: "NFL Football",       image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/sp1c.png"  },
+    { id: "sp2c",  title: "College Football",   image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/sp2c.png"  },
+    { id: "sp3c",  title: "NBA Basketball",     image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/sp3c.png"  },
+    { id: "sp4c",  title: "College Basketball", image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/sp4c.png"  },
+    { id: "sp5c",  title: "Baseball",           image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/sp5c.png"  },
+    { id: "sp6c",  title: "Soccer",             image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/sp6c.png"  },
+    { id: "sp7c",  title: "Women’s Sports",     image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/sp7c.png"  },
+    { id: "sp8c",  title: "Hockey",             image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/sp8c.png"  },
+    { id: "sp9c",  title: "Motorsports",        image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/sp9c.png"  },
+    { id: "sp10c", title: "Golf",               image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/sp10c.png" },
+  ];
+
+  // ─── visual constants ────────────────────────────────────────────
+  const TILE_W = 252, TILE_H = 378, GAP = 24;
+  const [focusIdx, setFocusIdx] = React.useState(0);
+  const [area,     setArea]     = React.useState("tiles");   // "tiles" | "button"
+  const [sel,      setSel]      = React.useState(selectedInit);
+
+  // Horizontal offset for carousel scrolling
+  const offsetX = -(focusIdx * (TILE_W + GAP));
+
+  // ─── keyboard navigation ─────────────────────────────────────────
+  React.useEffect(() => {
+    function onKey(e) {
+      if (area === "tiles") {
+        if (e.key === "ArrowRight")
+          setFocusIdx(i => Math.min(i + 1, tiles.length - 1));
+        else if (e.key === "ArrowLeft")
+          setFocusIdx(i => Math.max(i - 1, 0));
+        else if (e.key === "ArrowDown")
+          setArea("button");
+        else if (e.key === "Enter")
+          toggle(tiles[focusIdx]);
+      } else {
+        if (e.key === "ArrowUp")
+          setArea("tiles");
+        else if (e.key === "Enter")
+          onNextPressed(sel);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [area, focusIdx, sel]);
+
+  function toggle(t) {
+    setSel(s =>
+      s.includes(t.title) ? s.filter(x => x !== t.title) : [...s, t.title]
+    );
+  }
+
+  // ─── button visuals ──────────────────────────────────────────────
+  const hasSelection = sel.length > 0;
+  const assetName    = hasSelection ? "done" : "skip";
+  const buttonAsset  =
+    `https://raw.githubusercontent.com/nuzzlecut/assets/main/${assetName}_${area === "button" ? "on" : "off"}.png`;
+
+  // ─── render ───────────────────────────────────────────────────────
+  return (
+    <div style={{ position: "relative", width: 1920, height: 1080 }}>
+      {/* back arrow */}
+      <img
+        src="https://raw.githubusercontent.com/nuzzlecut/assets/main/back-arrow.png"
+        style={{ position: "absolute", left: 96, top: 54, width: 176, height: 55 }}
+        alt="Back"
+      />
+
+      {/* headings */}
+      <div style={{ position: "absolute", left: 144, top: 193,
+                    fontSize: 72, fontWeight: 600, lineHeight: "84px" }}>
+        What sports are you into?
+      </div>
+      <div style={{ position: "absolute", left: 144, top: 289,
+                    fontSize: 33, fontWeight: 300, lineHeight: "45px" }}>
+        Select as many sports as you like
+      </div>
+
+      {/* focus highlight */}
+      {area === "tiles" && (
+        <img
+          src="https://raw.githubusercontent.com/nuzzlecut/assets/main/sports_focus.png"
+          style={{ position: "absolute", left: 132, top: 385 }}
+          alt="focus"
+        />
+      )}
+
+      {/* single-row carousel */}
+      <div
+        style={{
+          position: "absolute",
+          left: 144,
+          top: 397,
+          width: 1824,
+          height: TILE_H,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            transform: `translateX(${offsetX}px)`,
+            transition: "transform 150ms ease-out",
+          }}
+        >
+          {tiles.map((t, i) => (
+            <div
+              key={t.id}
+              style={{
+                flex: "0 0 auto",
+                width: TILE_W,
+                height: TILE_H,
+                marginRight: GAP,
+                position: "relative",
+              }}
+            >
+              <img src={t.image} alt={t.title} style={{ width: "100%", height: "100%" }} />
+              {sel.includes(t.title) && (
+                <img
+                  src="https://raw.githubusercontent.com/nuzzlecut/assets/main/liked_overlay2.png"
+                  style={{ position: "absolute", top: 0, right: 0, width: 40, height: 40 }}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* skip/done button */}
+      <div
+        onClick={() => onNextPressed(sel)}
+        style={{
+          position: "absolute",
+          left: 144,
+          top: 845,
+          width: 381,
+          height: 72,
+          cursor: "pointer",
+          background: `url(${buttonAsset}) 0 0/100% 100% no-repeat`,
+        }}
+      />
+    </div>
+  );
+}
+      
+/* ------------------------------------------------------------------ */
+/* PAGE 3 – Final Screen (single 'Done' button version)                */
+/* ------------------------------------------------------------------ */
+function FinalPage({ mainSelections, sportsSelections, resetAll }) {
+  const picks = React.useMemo(
+    () => [...mainSelections, ...sportsSelections],
+    [mainSelections, sportsSelections]
+  );
+  const [summary, setSummary] = React.useState("Loading…");
+
+  React.useEffect(() => {
+    if (!picks.length) {
+      setSummary("You didn't pick anything—but that's okay!");
+      return;
+    }
+    setSummary("Loading…");
+    (async () => {
+      try {
+        const res = await fetchLLMSummary(picks);
+        setSummary(res);
+      } catch (err) {
+        console.error(err);
+        setSummary("Oops, something went wrong generating your summary!");
+      }
+    })();
+  }, [picks]);
+
+  const doneAsset =
+    "https://raw.githubusercontent.com/nuzzlecut/assets/main/page3_done_on.png";
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: 1920,
+        height: 1080,
+        background: "#20004c",
+        color: "#fff",
+        overflow: "hidden",
+      }}
+    >
+      {/* Animation */}
+      <style>{`
+        .anim-container{position:absolute;width:300px;height:300px;top:180px;left:calc(50% - 150px);}
+        #circle{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:100px;height:100px;
+                animation:circleGrow 800ms cubic-bezier(.21,.61,.35,1) forwards;}
+        @keyframes circleGrow{0%{width:100px;height:100px;}80%{width:260px;height:260px;}100%{width:240px;height:240px;}}
+        #robot{position:absolute;bottom:0;left:50%;transform:translateX(-50%) translateY(0) scale(1);
+               animation:robotPop 450ms cubic-bezier(.21,.61,.35,1) 800ms forwards;}
+        @keyframes robotPop{0%{transform:translateX(-50%) translateY(0) scale(1);}100%{transform:translateX(-50%) translateY(0) scale(1);}}
+      `}</style>
+
+      <div className="anim-container">
+        <img
+          id="circle"
+          src="https://raw.githubusercontent.com/nuzzlecut/assets/main/circle.svg"
+          alt="Growing Circle"
+        />
+        <img
+          id="robot"
+          src="https://raw.githubusercontent.com/nuzzlecut/assets/main/robot.svg"
+          alt="Popping Robot"
+        />
+      </div>
+
+      {/* Headline */}
+      <div
+        style={{
+          position: "absolute",
+          top: 513,
+          left: "50%",
+          transform: "translateX(-50%)",
+          fontSize: 72,
+          fontWeight: 600,
+          lineHeight: "84px",
+          textAlign: "center",
+        }}
+      >
+        You’re All Set
+      </div>
+
+      {/* Summary */}
+      <div
+        style={{
+          position: "absolute",
+          top: 609,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: 1280,
+          fontSize: 33,
+          fontWeight: 300,
+          lineHeight: "45px",
+          textAlign: "center",
+        }}
+        dangerouslySetInnerHTML={{ __html: summary }}
+      />
+
+      {/* Done button */}
+      <div
+        onClick={resetAll}
+        style={{
+          position: "absolute",
+          top: 739, // moved up 100px
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: 540,
+          height: 72,
+          cursor: "pointer",
+          background: `url(${doneAsset}) 0 0/100% 100% no-repeat`,
+        }}
+      />
+
+      {/* Subtext */}
+      <div
+        style={{
+          position: "absolute",
+          top: 739 + 72 + 48, // button top + height + spacing
+          left: "50%",
+          transform: "translateX(-50%)",
+          fontSize: 30,
+          fontWeight: 300,
+          textAlign: "center",
+        }}
+      >
+        Your selections have been added to the Save list
+      </div>
+    </div>
+  );
+}
+      
+      /* ------------------------------------------------------------------ */
+      /* fetchLLMSummary – LLM summary API call                             */
+      /* ------------------------------------------------------------------ */
+      async function fetchLLMSummary(picks) {
+        const picksJoined = picks.join(", ");
+        const prompt = `In a fun way, and using less than 30 words, describe the type of entertainment I enjoy based on these picks: ${picksJoined}. Start with "You seem to like"`;
+
+        const apiKey = "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"; // ← replace with your API key
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: "gpt-3.5-turbo",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.7,
+            max_tokens: 60,
+          }),
+        });
+
+        if (!response.ok) throw new Error("OpenAI error " + response.status);
+        const data = await response.json();
+        return data.choices?.[0]?.message?.content?.trim() || "No response";
+      }
+      
+      /* ------------------------------------------------------------------ */
+      /* Datasets: initialTileData and expansionTileData (Unchanged)          */
+      /* ------------------------------------------------------------------ */
+      // ─── Data for batch 2 ─────────────────────────────────────────────────────────
+      const initialTileDataBatch2 = [
+  {
+    id: "26a",
+    title: "The Hobbit: An Unexpected Journey",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/26a.png",
+    year: "2012",
+    rating: "PG-13",
+    descriptors: ["Fantasy", "Adventure", "Epic", "Middle-earth"],
+    expansionTiles: ["26b", "26c", "26d", "26e"],
+  },
+  {
+    id: "27a",
+    title: "Spider-Man: Into the Spider-Verse",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/27a.png",
+    year: "2018",
+    rating: "PG",
+    descriptors: ["Animation", "Superhero", "Multiverse", "Action"],
+    expansionTiles: ["27b", "27c", "27d", "27e"],
+  },
+  {
+    id: "28a",
+    title: "The Bachelor",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/28a.png",
+    year: "2002 – Present",
+    rating: "TV-14",
+    descriptors: ["Reality", "Romance", "Competition", "Dating"],
+    expansionTiles: ["28b", "28c", "28d", "28e"],
+  },
+  {
+    id: "29a",
+    title: "Downton Abbey",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/29a.png",
+    year: "2010 – 2015",
+    rating: "TV-PG",
+    descriptors: ["Period", "Drama", "British", "Aristocracy"],
+    expansionTiles: ["29b", "29c", "29d", "29e"],
+  },
+  {
+    id: "30a",
+    title: "Jeopardy!",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/30a.png",
+    year: "1984 – Present",
+    rating: "TV-G",
+    descriptors: ["Game Show", "Trivia", "Quiz", "Educational"],
+    expansionTiles: ["30b", "30c", "30d", "30e"],
+  },
+  {
+    id: "31a",
+    title: "Andor",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/31a.png",
+    year: "2022 – Present",
+    rating: "TV-14",
+    descriptors: ["Sci-Fi", "Spy", "Rebellion", "Star Wars"],
+    expansionTiles: ["31b", "31c", "31d", "31e"],
+  },
+  {
+    id: "32a",
+    title: "Breaking Bad",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/32a.png",
+    year: "2008 – 2013",
+    rating: "TV-MA",
+    descriptors: ["Crime", "Drama", "Thriller", "Antihero"],
+    expansionTiles: ["32b", "32c", "32d", "32e"],
+  },
+  {
+    id: "33a",
+    title: "Seinfeld",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/33a.png",
+    year: "1989 – 1998",
+    rating: "TV-PG",
+    descriptors: ["Sitcom", "Comedy", "New York", "Everyday Life"],
+    expansionTiles: ["33b", "33c", "33d", "33e"],
+  },
+  {
+    id: "34a",
+    title: "The Breakfast Club",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/34a.png",
+    year: "1985",
+    rating: "R",
+    descriptors: ["Teen", "Coming-of-Age", "Drama", "High School"],
+    expansionTiles: ["34b", "34c", "34d", "34e"],
+  },
+  {
+    id: "35a",
+    title: "The Witcher",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/35a.png",
+    year: "2019 – Present",
+    rating: "TV-MA",
+    descriptors: ["Fantasy", "Action", "Monsters", "Dark"],
+    expansionTiles: ["35b", "35c", "35d", "35e"],
+  },
+  {
+    id: "36a",
+    title: "Skyfall",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/36a.png",
+    year: "2012",
+    rating: "PG-13",
+    descriptors: ["Action", "Spy", "Thriller", "James Bond"],
+    expansionTiles: ["36b", "36c", "36d", "36e"],
+  },
+  {
+    id: "37a",
+    title: "The Last of Us",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/37a.png",
+    year: "2023 – Present",
+    rating: "TV-MA",
+    descriptors: ["Post-Apocalyptic", "Drama", "Horror", "Survival"],
+    expansionTiles: ["37b", "37c", "37d", "37e"],
+  },
+  {
+    id: "38a",
+    title: "The West Wing",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/38a.png",
+    year: "1999 – 2006",
+    rating: "TV-14",
+    descriptors: ["Political", "Drama", "White House", "Dialogue"],
+    expansionTiles: ["38b", "38c", "38d", "38e"],
+  },
+  {
+    id: "39a",
+    title: "Twin Peaks",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/39a.png",
+    year: "1990 – 1991",
+    rating: "TV-MA",
+    descriptors: ["Mystery", "Surreal", "Crime", "Cult"],
+    expansionTiles: ["39b", "39c", "39d", "39e"],
+  },
+  {
+    id: "40a",
+    title: "Atlanta",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/40a.png",
+    year: "2016 – 2022",
+    rating: "TV-MA",
+    descriptors: ["Comedy", "Drama", "Music", "Satire"],
+    expansionTiles: ["40b", "40c", "40d", "40e"],
+  },
+  {
+    id: "41a",
+    title: "The IT Crowd",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/41a.png",
+    year: "2006 – 2013",
+    rating: "TV-14",
+    descriptors: ["Comedy", "Workplace", "Nerd", "British"],
+    expansionTiles: ["41b", "41c", "41d", "41e"],
+  },
+  {
+    id: "42a",
+    title: "Grey’s Anatomy",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/42a.png",
+    year: "2005 – Present",
+    rating: "TV-14",
+    descriptors: ["Medical", "Drama", "Romance", "Hospital"],
+    expansionTiles: ["42b", "42c", "42d", "42e"],
+  },
+  {
+    id: "43a",
+    title: "Adventure Time",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/43a.png",
+    year: "2010 – 2018",
+    rating: "TV-PG",
+    descriptors: ["Animation", "Fantasy", "Adventure", "Whimsical"],
+    expansionTiles: ["43b", "43c", "43d", "43e"],
+  },
+  {
+    id: "44a",
+    title: "Footloose",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/44a.png",
+    year: "1984",
+    rating: "PG",
+    descriptors: ["Dance", "Drama", "Music", "Teen"],
+    expansionTiles: ["44b", "44c", "44d", "44e"],
+  }
+];
+
+const expansionTileDataBatch2 = {
+  "26b": {
+    id: "26b",
+    title: "Willy Wonka & the Chocolate Factory",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/26b.png",
+    year: "1971",
+    rating: "G",
+    descriptors: ["Family", "Musical", "Fantasy", "Classic"]
+  },
+  "26c": {
+    id: "26c",
+    title: "Crouching Tiger, Hidden Dragon",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/26c.png",
+    year: "2000",
+    rating: "PG-13",
+    descriptors: ["Martial-Arts", "Romance", "Fantasy", "Wuxia"]
+  },
+  "26d": {
+    id: "26d",
+    title: "Labyrinth",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/26d.png",
+    year: "1986",
+    rating: "PG",
+    descriptors: ["Fantasy", "Musical", "Adventure", "Cult Classic"]
+  },
+  "26e": {
+    id: "26e",
+    title: "The Princess Bride",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/26e.png",
+    year: "1987",
+    rating: "PG",
+    descriptors: ["Adventure", "Romance", "Comedy", "Fairy Tale"]
+  },
+  "27b": {
+    id: "27b",
+    title: "Loki",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/27b.png",
+    year: "2021 – 2023",
+    rating: "TV-14",
+    descriptors: ["Superhero", "Time-Travel", "Fantasy", "Marvel"]
+  },
+  "27c": {
+    id: "27c",
+    title: "The Punisher",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/27c.png",
+    year: "2017 – 2019",
+    rating: "TV-MA",
+    descriptors: ["Superhero", "Vigilante", "Crime", "Action"]
+  },
+  "27d": {
+    id: "27d",
+    title: "WandaVision",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/27d.png",
+    year: "2021",
+    rating: "TV-PG",
+    descriptors: ["Superhero", "Mystery", "Sitcom", "Marvel"]
+  },
+  "27e": {
+    id: "27e",
+    title: "Spider-Man",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/27e.png",
+    year: "2002",
+    rating: "PG-13",
+    descriptors: ["Superhero", "Origin-Story", "Action", "Marvel"]
+  },
+
+  /* ---------- Row 28 expansions ---------- */
+  "28b": {
+    id: "28b",
+    title: "American Idol",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/28b.png",
+    year: "2002 – Present",
+    rating: "TV-PG",                          //  [oai_citation_attribution:8‡Review Hub](https://www.metacritic.com/tv/american-idol/?utm_source=chatgpt.com)
+    descriptors: ["Music", "Competition", "Reality", "Talent"]
+  },
+  "28c": {
+    id: "28c",
+    title: "The Great British Bake Off",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/28c.png",
+    year: "2010 – Present",
+    rating: "TV-PG",                          //  [oai_citation_attribution:9‡IMDb](https://www.imdb.com/title/tt1877368/?utm_source=chatgpt.com)
+    descriptors: ["Baking", "Competition", "Wholesome", "Cooking"]
+  },
+  "28d": {
+    id: "28d",
+    title: "Flavor of Love",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/28d.png",
+    year: "2006 – 2008",
+    rating: "TV-14",                          //  [oai_citation_attribution:10‡IMDb](https://www.imdb.com/title/tt0488262/?utm_source=chatgpt.com)
+    descriptors: ["Dating", "Reality", "Competition", "Outrageous"]
+  },
+  "28e": {
+    id: "28e",
+    title: "Top Chef",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/28e.png",
+    year: "2006 – Present",
+    rating: "TV-PG",                          //  [oai_citation_attribution:11‡Rotten Tomatoes](https://www.rottentomatoes.com/tv/top_chef?utm_source=chatgpt.com)
+    descriptors: ["Cooking", "Competition", "Culinary", "Reality"]
+  },
+
+  /* ---------- Row 29 expansions ---------- */
+  "29b": {
+    id: "29b",
+    title: "Poldark",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/29b.png",
+    year: "2015 – 2019",
+    rating: "TV-14",                          //  [oai_citation_attribution:12‡IMDb](https://www.imdb.com/title/tt3636060/?utm_source=chatgpt.com)
+    descriptors: ["Period-Drama", "Romance", "British", "Cornwall"]
+  },
+  "29c": {
+    id: "29c",
+    title: "Sanditon",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/29c.png",
+    year: "2019 – 2023",
+    rating: "TV-14",                          //  [oai_citation_attribution:13‡IMDb](https://www.imdb.com/title/tt8685324/?utm_source=chatgpt.com)
+    descriptors: ["Period-Drama", "Romance", "Austen", "Seaside"]
+  },
+  "29d": {
+    id: "29d",
+    title: "Belgravia",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/29d.png",
+    year: "2020",
+    rating: "TV-14",                          //  [oai_citation_attribution:14‡IMDb](https://www.imdb.com/title/tt9642982/?utm_source=chatgpt.com)
+    descriptors: ["Period-Drama", "Society", "Secrets", "British"]
+  },
+  "29e": {
+    id: "29e",
+    title: "The Spanish Princess",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/29e.png",
+    year: "2019 – 2020",
+    rating: "TV-MA",                          //  [oai_citation_attribution:15‡IMDb](https://www.imdb.com/title/tt8417308/?utm_source=chatgpt.com)
+    descriptors: ["Historical", "Royalty", "Drama", "Tudor-Era"]
+  },
+
+  /* ---------- Row 30 expansions ---------- */
+  "30b": {
+    id: "30b",
+    title: "The Amazing Race",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/30b.png",
+    year: "2001 – Present",
+    rating: "TV-PG",                          //  [oai_citation_attribution:16‡IMDb](https://www.imdb.com/title/tt0285335/?utm_source=chatgpt.com)
+    descriptors: ["Travel", "Competition", "Adventure", "Reality"]
+  },
+  "30c": {
+    id: "30c",
+    title: "Wheel of Fortune",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/30c.png",
+    year: "1983 – Present",
+    rating: "TV-G",                           //  [oai_citation_attribution:17‡IMDb](https://www.imdb.com/title/tt0072584/?utm_source=chatgpt.com)
+    descriptors: ["Game-Show", "Word-Puzzle", "Classic", "Trivia"]
+  },
+  "30d": {
+    id: "30d",
+    title: "Cash Cab",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/30d.png",
+    year: "2005 – 2020",
+    rating: "TV-PG",                          //  [oai_citation_attribution:18‡IMDb](https://www.imdb.com/title/tt0790825/?utm_source=chatgpt.com)
+    descriptors: ["Game-Show", "Trivia", "Taxi", "Surprise"]
+  },
+  "30e": {
+    id: "30e",
+    title: "American Ninja Warrior",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/30e.png",
+    year: "2009 – Present",
+    rating: "TV-PG",                          //  [oai_citation_attribution:19‡IMDb](https://www.imdb.com/title/tt1587934/?utm_source=chatgpt.com)
+    descriptors: ["Obstacle-Course", "Sports", "Competition", "Reality"]
+  },
+
+  /* ---------- Row 31 expansions ---------- */
+  "31b": {
+    id: "31b",
+    title: "Dark Matter",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/31b.png",
+    year: "2024 – Present",
+    rating: "TV-MA",                          //  [oai_citation_attribution:20‡IMDb](https://www.imdb.com/title/tt19231492/?utm_source=chatgpt.com)
+    descriptors: ["Sci-Fi", "Thriller", "Multiverse", "Mystery"]
+  },
+  "31c": {
+    id: "31c",
+    title: "The Expanse",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/31c.png",
+    year: "2015 – 2022",
+    rating: "TV-14",                          //  [oai_citation_attribution:21‡IMDb](https://www.imdb.com/title/tt3230854/?utm_source=chatgpt.com)
+    descriptors: ["Sci-Fi", "Space", "Politics", "Drama"]
+  },
+  "31d": {
+    id: "31d",
+    title: "Battlestar Galactica",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/31d.png",
+    year: "2004 – 2009",
+    rating: "TV-14",                          //  [oai_citation_attribution:22‡IMDb](https://www.imdb.com/title/tt0407362/?utm_source=chatgpt.com)
+    descriptors: ["Sci-Fi", "Military", "Survival", "Drama"]
+  },
+  "31e": {
+    id: "31e",
+    title: "The Orville",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/31e.png",
+    year: "2017 – 2022",
+    rating: "TV-14",                          //  [oai_citation_attribution:23‡IMDb](https://www.imdb.com/title/tt5691552/?utm_source=chatgpt.com)
+    descriptors: ["Sci-Fi", "Comedy", "Adventure", "Satire"]
+  },
+
+  /* ---------- Row 32 expansions ---------- */
+  "32b": {
+    id: "32b",
+    title: "The Godfather",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/32b.png",
+    year: "1972",
+    rating: "R",                              //  [oai_citation_attribution:24‡IMDb](https://www.imdb.com/title/tt0068646/?utm_source=chatgpt.com)
+    descriptors: ["Crime", "Mafia", "Drama", "Classic"]
+  },
+  "32c": {
+    id: "32c",
+    title: "The Blacklist",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/32c.png",
+    year: "2013 – 2023",
+    rating: "TV-14",                          //  [oai_citation_attribution:25‡IMDb](https://www.imdb.com/title/tt2741602/?utm_source=chatgpt.com)
+    descriptors: ["Crime", "Thriller", "Mystery", "Espionage"]
+  },
+  "32d": {
+    id: "32d",
+    title: "Leverage",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/32d.png",
+    year: "2008 – 2012",
+    rating: "TV-PG",                          //  [oai_citation_attribution:26‡IMDb](https://www.imdb.com/title/tt1103987/?utm_source=chatgpt.com)
+    descriptors: ["Heist", "Con-Team", "Action", "Comedy-Drama"]
+  },
+  "32e": {
+    id: "32e",
+    title: "The Wire",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/32e.png",
+    year: "2002 – 2008",
+    rating: "TV-MA",                          //  [oai_citation_attribution:27‡IMDb](https://www.imdb.com/title/tt0306414/?utm_source=chatgpt.com)
+    descriptors: ["Crime", "Drama", "Realism", "Baltimore"]
+  },
+
+  /* ---------- Row 33 expansions ---------- */
+  "33b": {
+    id: "33b",
+    title: "The Big Bang Theory",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/33b.png",
+    year: "2007 – 2019",
+    rating: "TV-PG",                          //  [oai_citation_attribution:28‡IMDb](https://www.imdb.com/title/tt0898266/?utm_source=chatgpt.com)
+    descriptors: ["Sitcom", "Nerd-Culture", "Friendship", "Science"]
+  },
+  "33c": {
+    id: "33c",
+    title: "The Simpsons",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/33c.png",
+    year: "1989 – Present",
+    rating: "TV-14",                          //  [oai_citation_attribution:29‡IMDb](https://www.imdb.com/title/tt0096697/?utm_source=chatgpt.com)
+    descriptors: ["Animation", "Satire", "Family", "Comedy"]
+  },
+  "33d": {
+    id: "33d",
+    title: "New Girl",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/33d.png",
+    year: "2011 – 2018",
+    rating: "TV-14",                          //  [oai_citation_attribution:30‡IMDb](https://www.imdb.com/title/tt1826940/?utm_source=chatgpt.com)
+    descriptors: ["Sitcom", "Friendship", "Romance", "Quirky"]
+  },
+  "33e": {
+    id: "33e",
+    title: "Abbott Elementary",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/33e.png",
+    year: "2021 – Present",
+    rating: "TV-PG",                          //  [oai_citation_attribution:31‡IMDb](https://www.imdb.com/title/tt14218830/?utm_source=chatgpt.com)
+    descriptors: ["Sitcom", "Mockumentary", "School", "Uplifting"]
+  },
+
+  /* ---------- Row 34 expansions ---------- */
+  "34b": {
+    id: "34b",
+    title: "My Girl",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/34b.png",
+    year: "1991",
+    rating: "PG",                             //  [oai_citation_attribution:32‡IMDb](https://www.imdb.com/title/tt0102492/?utm_source=chatgpt.com)
+    descriptors: ["Coming-of-Age", "Drama", "Friendship", "Youth"]
+  },
+  "34c": {
+    id: "34c",
+    title: "Say Anything…",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/34c.png",
+    year: "1989",
+    rating: "PG-13",                          //  [oai_citation_attribution:33‡IMDb](https://www.imdb.com/title/tt0098258/?utm_source=chatgpt.com)
+    descriptors: ["Romance", "Comedy-Drama", "Teen", "Iconic"]
+  },
+  "34d": {
+    id: "34d",
+    title: "Stand by Me",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/34d.png",
+    year: "1986",
+    rating: "R",                              //  [oai_citation_attribution:34‡IMDb](https://www.imdb.com/title/tt0092005/?utm_source=chatgpt.com)
+    descriptors: ["Coming-of-Age", "Drama", "Adventure", "Friendship"]
+  },
+  "34e": {
+    id: "34e",
+    title: "Superbad",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/34e.png",
+    year: "2007",
+    rating: "R",                              //  [oai_citation_attribution:35‡IMDb](https://www.imdb.com/title/tt0829482/?utm_source=chatgpt.com)
+    descriptors: ["Comedy", "Teen", "Friendship", "Wild Night"]
+  },
+
+  /* ---------- Row 35 expansions ---------- */
+  "35b": {
+    id: "35b",
+    title: "His Dark Materials",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/35b.png",
+    year: "2019 – 2022",
+    rating: "TV-14",                          //  [oai_citation_attribution:36‡IMDb](https://www.imdb.com/title/tt5607976/?utm_source=chatgpt.com)
+    descriptors: ["Fantasy", "Adventure", "Parallel-Worlds", "Adaptation"]
+  },
+  "35c": {
+    id: "35c",
+    title: "Fantastic Beasts and Where to Find Them",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/35c.png",
+    year: "2016",
+    rating: "PG-13",                          //  [oai_citation_attribution:37‡IMDb](https://www.imdb.com/title/tt3183660/?utm_source=chatgpt.com)
+    descriptors: ["Fantasy", "Magic", "Adventure", "Wizarding-World"]
+  },
+  "35d": {
+    id: "35d",
+    title: "Charmed",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/35d.png",
+    year: "1998 – 2006",
+    rating: "TV-14",                          //  [oai_citation_attribution:38‡IMDb](https://www.imdb.com/title/tt0158552/?utm_source=chatgpt.com)
+    descriptors: ["Fantasy", "Witches", "Supernatural", "Sisterhood"]
+  },
+  "35e": {
+    id: "35e",
+    title: "Grimm",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/35e.png",
+    year: "2011 – 2017",
+    rating: "TV-14",                          //  [oai_citation_attribution:39‡IMDb](https://www.imdb.com/title/tt1830617/?utm_source=chatgpt.com)
+    descriptors: ["Fantasy", "Crime", "Folklore", "Supernatural"]
+  },
+  /* ---------- Row 36 ---------- */
+  "36b": {
+    id: "36b",
+    title: "The Bourne Identity",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/36b.png",
+    year: "2002",
+    rating: "PG-13",                       //  [oai_citation_attribution:0‡IMDb](https://www.imdb.com/title/tt0258463/?utm_source=chatgpt.com)
+    descriptors: ["Action", "Spy", "Thriller", "Amnesia"]
+  },
+  "36c": {
+    id: "36c",
+    title: "GoldenEye",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/36c.png",
+    year: "1995",
+    rating: "PG-13",                       //  [oai_citation_attribution:1‡IMDb](https://www.imdb.com/title/tt0113189/?utm_source=chatgpt.com)
+    descriptors: ["Action", "Spy", "Bond", "Adventure"]
+  },
+  "36d": {
+    id: "36d",
+    title: "Burn After Reading",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/36d.png",
+    year: "2008",
+    rating: "R",                           //  [oai_citation_attribution:2‡IMDb](https://www.imdb.com/title/tt0887883/?utm_source=chatgpt.com)
+    descriptors: ["Dark-Comedy", "Spy", "Crime", "Coen Bros"]
+  },
+  "36e": {
+    id: "36e",
+    title: "North by Northwest",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/36e.png",
+    year: "1959",
+    rating: "Approved",                    //  [oai_citation_attribution:3‡IMDb](https://www.imdb.com/title/tt0053125/?utm_source=chatgpt.com)
+    descriptors: ["Thriller", "Spy", "Hitchcock", "Chase"]
+  },
+
+  /* ---------- Row 37 ---------- */
+  "37b": {
+    id: "37b",
+    title: "Black Mirror",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/37b.png",
+    year: "2011 – Present",
+    rating: "TV-MA",                       //  [oai_citation_attribution:4‡IMDb](https://www.imdb.com/title/tt2085059/?utm_source=chatgpt.com)
+    descriptors: ["Sci-Fi", "Anthology", "Dystopia", "Technology"]
+  },
+  "37c": {
+    id: "37c",
+    title: "28 Days Later",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/37c.png",
+    year: "2002",
+    rating: "R",                           //  [oai_citation_attribution:5‡IMDb](https://www.imdb.com/title/tt0289043/?utm_source=chatgpt.com)
+    descriptors: ["Horror", "Zombie", "Apocalyptic", "Thriller"]
+  },
+  "37d": {
+    id: "37d",
+    title: "Silo",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/37d.png",
+    year: "2023 – Present",
+    rating: "TV-MA",                       //  [oai_citation_attribution:6‡IMDb](https://www.imdb.com/title/tt14688458/?utm_source=chatgpt.com)
+    descriptors: ["Sci-Fi", "Post-Apocalyptic", "Mystery", "Thriller"]
+  },
+  "37e": {
+    id: "37e",
+    title: "Divergent",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/37e.png",
+    year: "2014",
+    rating: "PG-13",                       //  [oai_citation_attribution:7‡IMDb](https://www.imdb.com/title/tt1840309/?utm_source=chatgpt.com)
+    descriptors: ["Action", "Sci-Fi", "Dystopia", "YA"]
+  },
+
+  /* ---------- Row 38 ---------- */
+  "38b": {
+    id: "38b",
+    title: "Scandal",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/38b.png",
+    year: "2012 – 2018",
+    rating: "TV-14",                       //  [oai_citation_attribution:8‡IMDb](https://www.imdb.com/title/tt1837576/?utm_source=chatgpt.com)
+    descriptors: ["Political", "Drama", "Thriller", "Crisis-Management"]
+  },
+  "38c": {
+    id: "38c",
+    title: "The Good Wife",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/38c.png",
+    year: "2009 – 2016",
+    rating: "TV-14",                       //  [oai_citation_attribution:9‡IMDb](https://www.imdb.com/title/tt1442462/?utm_source=chatgpt.com)
+    descriptors: ["Legal", "Drama", "Politics", "Courtroom"]
+  },
+  "38d": {
+    id: "38d",
+    title: "Madam Secretary",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/38d.png",
+    year: "2014 – 2019",
+    rating: "TV-PG",                       //  [oai_citation_attribution:10‡IMDb](https://www.imdb.com/title/tt3501074/?utm_source=chatgpt.com)
+    descriptors: ["Political", "Drama", "Diplomacy", "International"]
+  },
+  "38e": {
+    id: "38e",
+    title: "Veep",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/38e.png",
+    year: "2012 – 2019",
+    rating: "TV-MA",                       //  [oai_citation_attribution:11‡IMDb](https://www.imdb.com/title/tt1759761/?utm_source=chatgpt.com)
+    descriptors: ["Comedy", "Political", "Satire", "White House"]
+  },
+
+  /* ---------- Row 39 ---------- */
+  "39b": {
+    id: "39b",
+    title: "Knives Out",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/39b.png",
+    year: "2019",
+    rating: "PG-13",                       //  [oai_citation_attribution:12‡IMDb](https://www.imdb.com/title/tt8946378/parentalguide/?utm_source=chatgpt.com)
+    descriptors: ["Mystery", "Whodunit", "Comedy", "Detective"]
+  },
+  "39c": {
+    id: "39c",
+    title: "Fargo",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/39c.png",
+    year: "1996",
+    rating: "R",                           //  [oai_citation_attribution:13‡IMDb](https://www.imdb.com/title/tt0116282/?utm_source=chatgpt.com)
+    descriptors: ["Crime", "Thriller", "Dark-Comedy", "Kidnapping"]
+  },
+  "39d": {
+    id: "39d",
+    title: "The X-Files",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/39d.png",
+    year: "1993 – 2018",
+    rating: "TV-14",                       //  [oai_citation_attribution:14‡IMDb](https://www.imdb.com/title/tt0106179/?utm_source=chatgpt.com)
+    descriptors: ["Sci-Fi", "Paranormal", "Mystery", "FBI"]
+  },
+  "39e": {
+    id: "39e",
+    title: "Lost Highway",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/39e.png",
+    year: "1997",
+    rating: "R",                           //  [oai_citation_attribution:15‡IMDb](https://www.imdb.com/title/tt0116922/?utm_source=chatgpt.com)
+    descriptors: ["Neo-Noir", "Mystery", "Thriller", "Lynchian"]
+  },
+
+  /* ---------- Row 40 ---------- */
+  "40b": {
+    id: "40b",
+    title: "Snowfall",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/40b.png",
+    year: "2017 – 2023",
+    rating: "TV-MA",                       //  [oai_citation_attribution:16‡IMDb](https://www.imdb.com/title/tt6439752/?utm_source=chatgpt.com)
+    descriptors: ["Crime", "Drama", "Drugs", "1980s-LA"]
+  },
+  "40c": {
+    id: "40c",
+    title: "Girls",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/40c.png",
+    year: "2012 – 2017",
+    rating: "TV-MA",                       //  [oai_citation_attribution:17‡IMDb](https://www.imdb.com/title/tt1723816/?utm_source=chatgpt.com)
+    descriptors: ["Comedy", "Drama", "Friendship", "Millennial"]
+  },
+  "40d": {
+    id: "40d",
+    title: "Better Things",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/40d.png",
+    year: "2016 – 2022",
+    rating: "TV-MA",                       //  [oai_citation_attribution:18‡IMDb](https://www.imdb.com/title/tt4370596/?utm_source=chatgpt.com)
+    descriptors: ["Comedy", "Drama", "Family", "Motherhood"]
+  },
+  "40e": {
+    id: "40e",
+    title: "Transparent",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/40e.png",
+    year: "2014 – 2019",
+    rating: "TV-MA",                       //  [oai_citation_attribution:19‡IMDb](https://www.imdb.com/title/tt3502262/?utm_source=chatgpt.com)
+    descriptors: ["Drama", "LGBTQ", "Family", "Identity"]
+  },
+
+  /* ---------- Row 41 ---------- */
+  "41b": {
+    id: "41b",
+    title: "Better Off Ted",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/41b.png",
+    year: "2009 – 2010",
+    rating: "TV-PG",                       //  [oai_citation_attribution:20‡IMDb](https://www.imdb.com/title/tt1235547/?utm_source=chatgpt.com)
+    descriptors: ["Comedy", "Workplace", "Satire", "Corporate"]
+  },
+  "41c": {
+    id: "41c",
+    title: "Silicon Valley",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/41c.png",
+    year: "2014 – 2019",
+    rating: "TV-MA",                       //  [oai_citation_attribution:21‡IMDb](https://www.imdb.com/title/tt2575988/?utm_source=chatgpt.com)
+    descriptors: ["Comedy", "Tech-Startup", "Satire", "HBO"]
+  },
+  "41d": {
+    id: "41d",
+    title: "Arrested Development",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/41d.png",
+    year: "2003 – 2019",
+    rating: "TV-14",                       //  [oai_citation_attribution:22‡IMDb](https://www.imdb.com/title/tt0367279/?utm_source=chatgpt.com)
+    descriptors: ["Comedy", "Family", "Satire", "Cult-Classic"]
+  },
+  "41e": {
+    id: "41e",
+    title: "Community",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/41e.png",
+    year: "2009 – 2015",
+    rating: "TV-14",                       //  [oai_citation_attribution:23‡IMDb](https://www.imdb.com/title/tt1439629/?utm_source=chatgpt.com)
+    descriptors: ["Comedy", "Meta-Humor", "College", "Ensemble"]
+  },
+
+  /* ---------- Row 42 ---------- */
+  "42b": {
+    id: "42b",
+    title: "The Good Doctor",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/42b.png",
+    year: "2017 – 2024",
+    rating: "TV-14",                       //  [oai_citation_attribution:24‡IMDb](https://www.imdb.com/title/tt6470478/?utm_source=chatgpt.com)
+    descriptors: ["Medical", "Drama", "Autism", "Hospital"]
+  },
+  "42c": {
+    id: "42c",
+    title: "New Amsterdam",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/42c.png",
+    year: "2018 – 2022",
+    rating: "TV-14",                       //  [oai_citation_attribution:25‡IMDb](https://www.imdb.com/title/tt7817340/?utm_source=chatgpt.com)
+    descriptors: ["Medical", "Drama", "Hospital", "Inspirational"]
+  },
+  "42d": {
+    id: "42d",
+    title: "ER",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/42d.png",
+    year: "1994 – 2009",
+    rating: "TV-14",                       //  [oai_citation_attribution:26‡IMDb](https://www.imdb.com/title/tt0108757/?utm_source=chatgpt.com)
+    descriptors: ["Medical", "Drama", "Emergency-Room", "Chicago"]
+  },
+  "42e": {
+    id: "42e",
+    title: "Nurse Jackie",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/42e.png",
+    year: "2009 – 2015",
+    rating: "TV-MA",
+    descriptors: ["Medical", "Drama", "Addiction", "Dark-Comedy"]
+  },
+
+  /* ---------- Row 43 ---------- */
+  "43b": {
+    id: "43b",
+    title: "Steven Universe",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/43b.png",
+    year: "2013 – 2019",
+    rating: "TV-PG",
+    descriptors: ["Animation", "Fantasy", "Adventure", "LGBTQ"]
+  },
+  "43c": {
+    id: "43c",
+    title: "BoJack Horseman",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/43c.png",
+    year: "2014 – 2020",
+    rating: "TV-MA",
+    descriptors: ["Animation", "Dark-Comedy", "Celebrity", "Mental-Health"]
+  },
+  "43d": {
+    id: "43d",
+    title: "Bob’s Burgers",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/43d.png",
+    year: "2011 – Present",
+    rating: "TV-14",
+    descriptors: ["Animation", "Comedy", "Family-Restaurant", "Quirky"]
+  },
+  "43e": {
+    id: "43e",
+    title: "Batman: The Animated Series",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/43e.png",
+    year: "1992 – 1995",
+    rating: "TV-PG", 
+    descriptors: ["Animation", "Superhero", "Action", "DC"]
+  },
+
+  /* ---------- Row 44 ---------- */
+  "44b": {
+    id: "44b",
+    title: "Sing",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/44b.png",
+    year: "2016",
+    rating: "PG",
+    descriptors: ["Animation", "Music", "Comedy", "Animals"]
+  },
+  "44c": {
+    id: "44c",
+    title: "Dirty Dancing",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/44c.png",
+    year: "1987",
+    rating: "PG-13",
+    descriptors: ["Romance", "Dance", "Coming-of-Age", "Drama"]
+  },
+  "44d": {
+    id: "44d",
+    title: "Glee",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/44d.png",
+    year: "2009 – 2015",
+    rating: "TV-PG",                       
+    descriptors: ["Musical", "Comedy-Drama", "High-School", "Choir"]
+  },
+  "44e": {
+    id: "44e",
+    title: "Pitch Perfect",
+    image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/44e.png",
+    year: "2012",
+    rating: "PG-13",                       // 
+    descriptors: ["Comedy", "Music", "A Cappella", "College"],
+        },
+    };
+// ──────────────────────────────────────────────────────────────────────────────
+      const initialTileData = [
+        {
+          id: "1a",
+          title: "Wicked",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/1a.png",
+          year: "2024",
+          rating: "PG",
+          descriptors: ["Family", "Magical", "Enchanting", "Riveting"],
+          expansionTiles: ["1b", "1c", "1d", "1e"],
+        },
+        {
+          id: "2a",
+          title: "Deadpool & Wolverine",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/2a.png",
+          year: "2024",
+          rating: "R",
+          descriptors: ["Superhero", "Action", "Violence", "Comedy"],
+          expansionTiles: ["2b", "2c", "2d", "2e"],
+        },
+        {
+          id: "3a",
+          title: "The Kardashians",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/3a.png",
+          year: "2007–Present",
+          rating: "TV-14",
+          descriptors: ["Reality TV", "Family", "Drama", "Celebrity"],
+          expansionTiles: ["3b", "3c", "3d", "3e"],
+        },
+        {
+          id: "4a",
+          title: "Bridgerton",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/4a.png",
+          year: "2020–Present",
+          rating: "TV-MA",
+          descriptors: ["Romance", "Drama", "Period", "Regency Era"],
+          expansionTiles: ["4b", "4c", "4d", "4e"],
+        },
+        {
+          id: "5a",
+          title: "Beast Games",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/5a.png",
+          year: "2024-Present",
+          rating: "TV-14",
+          descriptors: ["Game Show", "Reality", "Competition", "Thrilling"],
+          expansionTiles: ["5b", "5c", "5d", "5e"],
+        },
+        {
+          id: "6a",
+          title: "Bluey",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/6a.png",
+          year: "2018–Present",
+          rating: "TV-Y",
+          descriptors: ["Kids", "Animation", "Family", "Wholesome"],
+          expansionTiles: ["6b", "6c", "6d", "6e"],
+        },
+        {
+          id: "7a",
+          title: "Law & Order",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/7a.png",
+          year: "1990–2010",
+          rating: "TV-14",
+          descriptors: ["Crime", "Procedural", "Drama", "Legal"],
+          expansionTiles: ["7b", "7c", "7d", "7e"],
+        },
+        {
+          id: "8a",
+          title: "Friends",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/8a.png",
+          year: "1994–2004",
+          rating: "TV-14",
+          descriptors: ["Sitcom", "Comedy", "Friendship", "90s"],
+          expansionTiles: ["8b", "8c", "8d", "8e"],
+        },
+        {
+          id: "9a",
+          title: "The Mandalorian",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/9a.png",
+          year: "2019–2023",
+          rating: "TV-14",
+          descriptors: ["Sci-Fi", "Action", "Star Wars", "Adventure"],
+          expansionTiles: ["9b", "9c", "9d", "9e"],
+        },
+        {
+          id: "10a",
+          title: "Scream VI",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/10a.png",
+          year: "2023",
+          rating: "R",
+          descriptors: ["Horror", "Slasher", "Suspense", "Violence"],
+          expansionTiles: ["10b", "10c", "10d", "10e"],
+        },
+        {
+          id: "11a",
+          title: "Avengers: Endgame",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/11a.png",
+          year: "2019",
+          rating: "PG-13",
+          descriptors: ["Superhero", "Action", "Marvel", "Epic"],
+          expansionTiles: ["11b", "11c", "11d", "11e"],
+        },
+        {
+          id: "12a",
+          title: "Emily in Paris",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/12a.png",
+          year: "2020–Present",
+          rating: "TV-MA",
+          descriptors: ["Romantic Comedy", "Drama", "Fashion", "Travel"],
+          expansionTiles: ["12b", "12c", "12d", "12e"],
+        },
+        {
+          id: "13a",
+          title: "Severance",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/13a.png",
+          year: "2022–Present",
+          rating: "TV-MA",
+          descriptors: ["Sci-Fi", "Thriller", "Mystery", "Surreal"],
+          expansionTiles: ["13b", "13c", "13d", "13e"],
+        },
+        {
+          id: "14a",
+          title: "Raiders of the Lost Ark",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/14a.png",
+          year: "1981",
+          rating: "PG",
+          descriptors: ["Adventure", "Action", "Archaeology", "Classic"],
+          expansionTiles: ["14b", "14c", "14d", "14e"],
+        },
+        {
+          id: "15a",
+          title: "Planet Earth",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/15a.png",
+          year: "2006",
+          rating: "TV-G",
+          descriptors: ["Documentary", "Nature", "BBC", "Wildlife"],
+          expansionTiles: ["15b", "15c", "15d", "15e"],
+        },
+        {
+          id: "16a",
+          title: "The Greatest Showman",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/16a.png",
+          year: "2017",
+          rating: "PG",
+          descriptors: ["Musical", "Biography", "Family", "Inspirational"],
+          expansionTiles: ["16b", "16c", "16d", "16e"],
+        },
+        {
+          id: "17a",
+          title: "Yellowstone",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/17a.png",
+          year: "2018–Present",
+          rating: "TV-MA",
+          descriptors: ["Drama", "Western", "Family", "Ranch"],
+          expansionTiles: ["17b", "17c", "17d", "17e"],
+        },
+        {
+          id: "18a",
+          title: "The Crown",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/18a.png",
+          year: "2016–Present",
+          rating: "TV-MA",
+          descriptors: ["Drama", "Royal Family", "Historical", "Biographical"],
+          expansionTiles: ["18b", "18c", "18d", "18e"],
+        },
+        {
+          id: "19a",
+          title: "Saving Private Ryan",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/19a.png",
+          year: "1998",
+          rating: "R",
+          descriptors: ["War", "Drama", "WWII", "Intense"],
+          expansionTiles: ["19b", "19c", "19d", "19e"],
+        },
+        {
+          id: "20a",
+          title: "Ted Lasso",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/20a.png",
+          year: "2020–Present",
+          rating: "TV-MA",
+          descriptors: ["Comedy", "Sports", "Heartwarming", "Feel-Good"],
+          expansionTiles: ["20b", "20c", "20d", "20e"],
+        },
+        {
+          id: "21a",
+          title: "Frozen",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/21a.png",
+          year: "2013",
+          rating: "PG",
+          descriptors: ["Animation", "Musical", "Fantasy", "Family"],
+          expansionTiles: ["21b", "21c", "21d", "21e"],
+        },
+        {
+          id: "22a",
+          title: "Naruto",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/22a.png",
+          year: "2002–2007",
+          rating: "TV-PG",
+          descriptors: ["Anime", "Action", "Ninja", "Adventure"],
+          expansionTiles: ["22b", "22c", "22d", "22e"],
+        },
+        {
+          id: "23a",
+          title: "Oppenheimer",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/23a.png",
+          year: "2023",
+          rating: "R",
+          descriptors: ["Biography", "Historical", "Drama", "War"],
+          expansionTiles: ["23b", "23c", "23d", "23e"],
+        },
+        {
+          id: "24a",
+          title: "Black Swan",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/24a.png",
+          year: "2010",
+          rating: "R",
+          descriptors: ["Psychological", "Thriller", "Ballet", "Dark"],
+          expansionTiles: ["24b", "24c", "24d", "24e"],
+        },
+        {
+          id: "25a",
+          title: "Rick and Morty",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/25a.png",
+          year: "2013–Present",
+          rating: "TV-MA",
+          descriptors: ["Animated", "Sci-Fi", "Comedy", "Satire"],
+          expansionTiles: ["25b", "25c", "25d", "25e"],
+        },
+      ];
+
+      const expansionTileData = {
+        // Row 1 expansions
+        "1b": {
+          id: "1b",
+          title: "Harry Potter",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/1b.png",
+          year: "2001–2011",
+          rating: "PG–PG-13",
+          descriptors: ["Fantasy", "Wizards", "Adventure", "Coming-of-Age"],
+        },
+        "1c": {
+          id: "1c",
+          title: "Lord of the Rings",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/1c.png",
+          year: "2001–2003",
+          rating: "PG-13",
+          descriptors: ["Fantasy", "Epic", "Adventure", "Tolkien"],
+        },
+        "1d": {
+          id: "1d",
+          title: "Game of Thrones",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/1d.png",
+          year: "2011–2019",
+          rating: "TV-MA",
+          descriptors: ["Medieval", "Fantasy", "Political", "Violent"],
+        },
+        "1e": {
+          id: "1e",
+          title: "Shadow and Bone",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/1e.png",
+          year: "2021–Present",
+          rating: "TV-14",
+          descriptors: ["Fantasy", "Adventure", "Magic", "YA Adaptation"],
+        },
+
+        // Row 2 expansions
+        "2b": {
+          id: "2b",
+          title: "John Wick",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/2b.png",
+          year: "2014",
+          rating: "R",
+          descriptors: ["Action", "Thriller", "Gun-Fu", "Revenge"],
+        },
+        "2c": {
+          id: "2c",
+          title: "Mad Max: Fury Road",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/2c.png",
+          year: "2015",
+          rating: "R",
+          descriptors: ["Action", "Post-Apocalyptic", "Chase", "Feminist Themes"],
+        },
+        "2d": {
+          id: "2d",
+          title: "The Dark Knight",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/2d.png",
+          year: "2008",
+          rating: "PG-13",
+          descriptors: ["Superhero", "Crime", "Thriller", "Batman"],
+        },
+        "2e": {
+          id: "2e",
+          title: "The Matrix",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/2e.png",
+          year: "1999",
+          rating: "R",
+          descriptors: ["Sci-Fi", "Action", "Cyberpunk", "Philosophical"],
+        },
+
+        // Row 3 expansions
+        "3b": {
+          id: "3b",
+          title: "Survivor",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/3b.png",
+          year: "2000–Present",
+          rating: "TV-PG",
+          descriptors: ["Reality TV", "Competition", "Strategy", "Outwit-Outplay"],
+        },
+        "3c": {
+          id: "3c",
+          title: "The Real Housewives of Beverly Hills",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/3c.png",
+          year: "2010–Present",
+          rating: "TV-14",
+          descriptors: ["Reality TV", "Drama", "Lifestyle", "Conflict"],
+        },
+        "3d": {
+          id: "3d",
+          title: "Big Brother",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/3d.png",
+          year: "1999–Present",
+          rating: "TV-14",
+          descriptors: ["Reality TV", "Social Experiment", "Competition", "24/7 Feed"],
+        },
+        "3e": {
+          id: "3e",
+          title: "American Idol",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/3e.png",
+          year: "2002–Present",
+          rating: "TV-PG",
+          descriptors: ["Music", "Competition", "Talent Show", "Reality TV"],
+        },
+
+        // Row 4 expansions
+        "4b": {
+          id: "4b",
+          title: "The Handmaid’s Tale",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/4b.png",
+          year: "2017–Present",
+          rating: "TV-MA",
+          descriptors: ["Dystopian", "Drama", "Feminist", "Adaptation"],
+        },
+        "4c": {
+          id: "4c",
+          title: "Euphoria",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/4c.png",
+          year: "2019–Present",
+          rating: "TV-MA",
+          descriptors: ["Teen Drama", "Drugs", "Controversial", "Coming-of-Age"],
+        },
+        "4d": {
+          id: "4d",
+          title: "This Is Us",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/4d.png",
+          year: "2016–2022",
+          rating: "TV-14",
+          descriptors: ["Family", "Drama", "Emotional", "Flashbacks"],
+        },
+        "4e": {
+          id: "4e",
+          title: "Grey’s Anatomy",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/4e.png",
+          year: "2005–Present",
+          rating: "TV-14",
+          descriptors: ["Medical", "Drama", "Romance", "Long-Running"],
+        },
+
+        // Row 5 expansions
+        "5b": {
+          id: "5b",
+          title: "The Floor is Lava",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/5b.png",
+          year: "2020–Present",
+          rating: "TV-PG",
+          descriptors: ["Game Show", "Competition", "Obstacle Course", "Netflix"],
+        },
+        "5c": {
+          id: "5c",
+          title: "Wipeout",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/5c.png",
+          year: "2008–2021",
+          rating: "TV-PG",
+          descriptors: ["Game Show", "Physical Comedy", "Obstacle Course", "Reality"],
+        },
+        "5d": {
+          id: "5d",
+          title: "American Ninja Warrior",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/5d.png",
+          year: "2009–Present",
+          rating: "TV-PG",
+          descriptors: ["Sports Competition", "Obstacle Course", "Fitness", "Endurance"],
+        },
+        "5e": {
+          id: "5e",
+          title: "Squid Game",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/5e.png",
+          year: "2021",
+          rating: "TV-MA",
+          descriptors: ["Survival", "Thriller", "Violent", "Korean"],
+        },
+
+        // Row 6 expansions
+        "6b": {
+          id: "6b",
+          title: "Peppa Pig",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/6b.png",
+          year: "2004–Present",
+          rating: "TV-Y",
+          descriptors: ["Kids", "Animation", "British", "Family"],
+        },
+        "6c": {
+          id: "6c",
+          title: "Sesame Street",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/6c.png",
+          year: "1969–Present",
+          rating: "TV-Y",
+          descriptors: ["Educational", "Puppets", "Kids", "Iconic"],
+        },
+        "6d": {
+          id: "6d",
+          title: "Curious George",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/6d.png",
+          year: "2006–2015 (TV series)",
+          rating: "TV-Y",
+          descriptors: ["Kids", "Monkey", "Adventure", "Educational"],
+        },
+        "6e": {
+          id: "6e",
+          title: "Dora the Explorer",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/6e.png",
+          year: "2000–2019",
+          rating: "TV-Y",
+          descriptors: ["Kids", "Interactive", "Spanish", "Adventure"],
+        },
+
+        // Row 7 expansions
+        "7b": {
+          id: "7b",
+          title: "Breaking Bad",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/7b.png",
+          year: "2008–2013",
+          rating: "TV-MA",
+          descriptors: ["Crime", "Drama", "Drugs", "Tense"],
+        },
+        "7c": {
+          id: "7c",
+          title: "Dexter Original Sin",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/7c.png",
+          year: "N/A",
+          rating: "TV-MA",
+          descriptors: ["Crime", "Thriller", "Serial Killer", "Revival"],
+        },
+        "7d": {
+          id: "7d",
+          title: "Mindhunter",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/7d.png",
+          year: "2017–2019",
+          rating: "TV-MA",
+          descriptors: ["Crime", "FBI Profiling", "Serial Killers", "Psychological"],
+        },
+        "7e": {
+          id: "7e",
+          title: "Narcos",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/7e.png",
+          year: "2015–2017",
+          rating: "TV-MA",
+          descriptors: ["Crime", "Drugs", "Cartel", "Biographical"],
+        },
+
+        // Row 8 expansions
+        "8b": {
+          id: "8b",
+          title: "The Office",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/8b.png",
+          year: "2005–2013",
+          rating: "TV-14",
+          descriptors: ["Comedy", "Sitcom", "Mockumentary", "Workplace"],
+        },
+        "8c": {
+          id: "8c",
+          title: "Brooklyn Nine-Nine",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/8c.png",
+          year: "2013–2021",
+          rating: "TV-14",
+          descriptors: ["Comedy", "Police", "Ensemble Cast", "Sitcom"],
+        },
+        "8d": {
+          id: "8d",
+          title: "How I Met Your Mother",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/8d.png",
+          year: "2005–2014",
+          rating: "TV-14",
+          descriptors: ["Sitcom", "Romance", "Friendship", "Comedy"],
+        },
+        "8e": {
+          id: "8e",
+          title: "Parks and Recreation",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/8e.png",
+          year: "2009–2015",
+          rating: "TV-14",
+          descriptors: ["Comedy", "Mockumentary", "Government", "Wholesome"],
+        },
+
+        // Row 9 expansions
+        "9b": {
+          id: "9b",
+          title: "Stranger Things",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/9b.png",
+          year: "2016–Present",
+          rating: "TV-14",
+          descriptors: ["Sci-Fi", "Horror", "80s", "Nostalgia"],
+        },
+        "9c": {
+          id: "9c",
+          title: "Westworld",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/9c.png",
+          year: "2016–2022",
+          rating: "TV-MA",
+          descriptors: ["Sci-Fi", "Western", "AI", "Philosophical"],
+        },
+        "9d": {
+          id: "9d",
+          title: "Interstellar",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/9d.png",
+          year: "2014",
+          rating: "PG-13",
+          descriptors: ["Sci-Fi", "Space", "Time Dilation", "Emotional"],
+        },
+        "9e": {
+          id: "9e",
+          title: "Star Trek: The Next Generation",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/9e.png",
+          year: "1987–1994",
+          rating: "TV-PG",
+          descriptors: ["Sci-Fi", "Space", "Utopian", "Classic"],
+        },
+
+        // Row 10 expansions
+        "10b": {
+          id: "10b",
+          title: "Halloween",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/10b.png",
+          year: "1978",
+          rating: "R",
+          descriptors: ["Horror", "Slasher", "Classic", "Michael Myers"],
+        },
+        "10c": {
+          id: "10c",
+          title: "It",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/10c.png",
+          year: "2017",
+          rating: "R",
+          descriptors: ["Horror", "Clowns", "Stephen King", "Supernatural"],
+        },
+        "10d": {
+          id: "10d",
+          title: "The Conjuring",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/10d.png",
+          year: "2013",
+          rating: "R",
+          descriptors: ["Horror", "Supernatural", "Warrens", "Demonic"],
+        },
+        "10e": {
+          id: "10e",
+          title: "A Quiet Place",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/10e.png",
+          year: "2018",
+          rating: "PG-13",
+          descriptors: ["Horror", "Post-Apocalyptic", "Aliens", "Family"],
+        },
+
+        // Row 11 expansions
+        "11b": {
+          id: "11b",
+          title: "The Boys",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/11b.png",
+          year: "2019–Present",
+          rating: "TV-MA",
+          descriptors: ["Superhero", "Dark Humor", "Violent", "Satire"],
+        },
+        "11c": {
+          id: "11c",
+          title: "Spider-Man: No Way Home",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/11c.png",
+          year: "2021",
+          rating: "PG-13",
+          descriptors: ["Superhero", "Multiverse", "Marvel", "Adventure"],
+        },
+        "11d": {
+          id: "11d",
+          title: "Sonic The Hedgehog 3",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/11d.png",
+          year: "TBD",
+          rating: "N/A",
+          descriptors: ["Family", "Video Game", "Adventure", "Comedy"],
+        },
+        "11e": {
+          id: "11e",
+          title: "Black Panther",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/11e.png",
+          year: "2018",
+          rating: "PG-13",
+          descriptors: ["Superhero", "Marvel", "Action", "Afrofuturism"],
+        },
+
+        // Row 12 expansions
+        "12b": {
+          id: "12b",
+          title: "To All the Boys",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/12b.png",
+          year: "2018",
+          rating: "TV-14",
+          descriptors: ["Teen", "Romance", "Comedy", "YA Adaptation"],
+        },
+        "12c": {
+          id: "12c",
+          title: "The Notebook",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/12c.png",
+          year: "2004",
+          rating: "PG-13",
+          descriptors: ["Romance", "Drama", "Melodrama", "Nicholas Sparks"],
+        },
+        "12d": {
+          id: "12d",
+          title: "Pride and Prejudice",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/12d.png",
+          year: "2005",
+          rating: "PG",
+          descriptors: ["Period Romance", "Classic", "Austen", "Drama"],
+        },
+        "12e": {
+          id: "12e",
+          title: "Crazy Rich Asians",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/12e.png",
+          year: "2018",
+          rating: "PG-13",
+          descriptors: ["Romantic Comedy", "Wealth", "Family", "Asian Cast"],
+        },
+
+        // Row 13 expansions
+        "13b": {
+          id: "13b",
+          title: "True Detective",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/13b.png",
+          year: "2014–2019",
+          rating: "TV-MA",
+          descriptors: ["Crime", "Anthology", "Southern Gothic", "Dark"],
+        },
+        "13c": {
+          id: "13c",
+          title: "Sherlock",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/13c.png",
+          year: "2010–2017",
+          rating: "TV-14",
+          descriptors: ["Mystery", "Detective", "BBC", "Modern Adaptation"],
+        },
+        "13d": {
+          id: "13d",
+          title: "Lost",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/13d.png",
+          year: "2004–2010",
+          rating: "TV-14",
+          descriptors: ["Mystery", "Island", "Sci-Fi", "Survival"],
+        },
+        "13e": {
+          id: "13e",
+          title: "Only Murders in the Building",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/13e.png",
+          year: "2021–Present",
+          rating: "TV-MA",
+          descriptors: ["Comedy", "Mystery", "True Crime Parody", "Podcast"],
+        },
+
+        // Row 14 expansions
+        "14b": {
+          id: "14b",
+          title: "Jumanji",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/14b.png",
+          year: "1995 / 2017",
+          rating: "PG / PG-13",
+          descriptors: ["Fantasy", "Adventure", "Board Game", "Comedy"],
+        },
+        "14c": {
+          id: "14c",
+          title: "Pirates of the Caribbean",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/14c.png",
+          year: "2003–2017",
+          rating: "PG-13",
+          descriptors: ["Adventure", "Pirates", "Fantasy", "Swashbuckling"],
+        },
+        "14d": {
+          id: "14d",
+          title: "Jurassic Park",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/14d.png",
+          year: "1993",
+          rating: "PG-13",
+          descriptors: ["Dinosaurs", "Adventure", "Sci-Fi", "Thriller"],
+        },
+        "14e": {
+          id: "14e",
+          title: "The Social Dilemma",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/14e.png",
+          year: "2020",
+          rating: "PG-13",
+          descriptors: ["Documentary", "Social Media", "Tech", "Society"],
+        },
+
+        // Row 15 expansions
+        "15b": {
+          id: "15b",
+          title: "Cosmos Possible Worlds",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/15b.png",
+          year: "2020",
+          rating: "TV-PG",
+          descriptors: ["Documentary", "Science", "Astronomy", "Neil deGrasse Tyson"],
+        },
+        "15c": {
+          id: "15c",
+          title: "Free Solo",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/15c.png",
+          year: "2018",
+          rating: "PG-13",
+          descriptors: ["Documentary", "Climbing", "Thriller", "Fear of Heights"],
+        },
+        "15d": {
+          id: "15d",
+          title: "The Social Dilemma",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/15d.png",
+          year: "2020",
+          rating: "PG-13",
+          descriptors: ["Documentary", "Social Media", "Ethics", "Technology"],
+        },
+        "15e": {
+          id: "15e",
+          title: "Blue Planet",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/15e.png",
+          year: "2001",
+          rating: "TV-G",
+          descriptors: ["Nature", "Marine Life", "BBC Documentary", "Ocean"],
+        },
+
+        // Row 16 expansions
+        "16b": {
+          id: "16b",
+          title: "La La Land",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/16b.png",
+          year: "2016",
+          rating: "PG-13",
+          descriptors: ["Romance", "Musical", "Drama", "Los Angeles"],
+        },
+        "16c": {
+          id: "16c",
+          title: "Hamilton",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/16c.png",
+          year: "2015 (Stage)",
+          rating: "PG-13",
+          descriptors: ["Musical", "Historical", "Rap", "Broadway"],
+        },
+        "16d": {
+          id: "16d",
+          title: "Mamma Mia!",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/16d.png",
+          year: "2008",
+          rating: "PG-13",
+          descriptors: ["Musical", "ABBA", "Romance", "Comedy"],
+        },
+        "16e": {
+          id: "16e",
+          title: "Les Misérables",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/16e.png",
+          year: "2012 (Film)",
+          rating: "PG-13",
+          descriptors: ["Musical", "Historical", "Drama", "Hugo Adaptation"],
+        },
+
+        // Row 17 expansions
+        "17b": {
+          id: "17b",
+          title: "Django Unchained",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/17b.png",
+          year: "2012",
+          rating: "R",
+          descriptors: ["Western", "Tarantino", "Violent", "Revenge"],
+        },
+        "17c": {
+          id: "17c",
+          title: "The Hateful Eight",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/17c.png",
+          year: "2015",
+          rating: "R",
+          descriptors: ["Western", "Mystery", "Tarantino", "Violent"],
+        },
+        "17d": {
+          id: "17d",
+          title: "True Grit",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/17d.png",
+          year: "2010",
+          rating: "PG-13",
+          descriptors: ["Western", "Drama", "Coen Brothers", "Revenge"],
+        },
+        "17e": {
+          id: "17e",
+          title: "Hell or High Water",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/17e.png",
+          year: "2016",
+          rating: "R",
+          descriptors: ["Modern Western", "Crime", "Drama", "Texas"],
+        },
+
+        // Row 18 expansions
+        "18b": {
+          id: "18b",
+          title: "Gladiator",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/18b.png",
+          year: "2000",
+          rating: "R",
+          descriptors: ["Historical", "Action", "Epic", "Rome"],
+        },
+        "18c": {
+          id: "18c",
+          title: "Vikings Valhalla",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/18c.png",
+          year: "2022–Present",
+          rating: "TV-MA",
+          descriptors: ["Historical", "Action", "Norse", "Spin-Off"],
+        },
+        "18d": {
+          id: "18d",
+          title: "Chernobyl",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/18d.png",
+          year: "2019",
+          rating: "TV-MA",
+          descriptors: ["Historical", "Drama", "Disaster", "Nuclear"],
+        },
+        "18e": {
+          id: "18e",
+          title: "Schindler’s List",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/18e.png",
+          year: "1993",
+          rating: "R",
+          descriptors: ["Holocaust", "Historical", "Drama", "Spielberg"],
+        },
+
+        // Row 19 expansions
+        "19b": {
+          id: "19b",
+          title: "1917",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/19b.png",
+          year: "2019",
+          rating: "R",
+          descriptors: ["War", "WWI", "Single Shot Style", "Suspense"],
+        },
+        "19c": {
+          id: "19c",
+          title: "Dunkirk",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/19c.png",
+          year: "2017",
+          rating: "PG-13",
+          descriptors: ["War", "WWII", "Nolan", "Intense"],
+        },
+        "19d": {
+          id: "19d",
+          title: "Hacksaw Ridge",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/19d.png",
+          year: "2016",
+          rating: "R",
+          descriptors: ["War", "Drama", "Faith", "Violence"],
+        },
+        "19e": {
+          id: "19e",
+          title: "Platoon",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/19e.png",
+          year: "1986",
+          rating: "R",
+          descriptors: ["War", "Vietnam", "Drama", "Oliver Stone"],
+        },
+
+        // Row 20 expansions
+        "20b": {
+          id: "20b",
+          title: "Moneyball",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/20b.png",
+          year: "2011",
+          rating: "PG-13",
+          descriptors: ["Baseball", "True Story", "Statistics", "Sports Drama"],
+        },
+        "20c": {
+          id: "20c",
+          title: "Friday Night Lights",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/20c.png",
+          year: "2004 (Film) / 2006–2011 (TV)",
+          rating: "PG-13 / TV-14",
+          descriptors: ["Sports", "Football", "Drama", "High School"],
+        },
+        "20d": {
+          id: "20d",
+          title: "Remember the Titans",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/20d.png",
+          year: "2000",
+          rating: "PG",
+          descriptors: ["Sports", "Football", "Integration", "Inspiring"],
+        },
+        "20e": {
+          id: "20e",
+          title: "Creed",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/20e.png",
+          year: "2015",
+          rating: "PG-13",
+          descriptors: ["Boxing", "Rocky Series", "Drama", "Legacy"],
+        },
+
+        // Row 21 expansions
+        "21b": {
+          id: "21b",
+          title: "Toy Story",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/21b.png",
+          year: "1995",
+          rating: "G",
+          descriptors: ["Animation", "Family", "Pixar", "Friendship"],
+        },
+        "21c": {
+          id: "21c",
+          title: "Encanto",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/21c.png",
+          year: "2021",
+          rating: "PG",
+          descriptors: ["Animation", "Musical", "Magic", "Colombia"],
+        },
+        "21d": {
+          id: "21d",
+          title: "Finding Nemo",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/21d.png",
+          year: "2003",
+          rating: "G",
+          descriptors: ["Animation", "Pixar", "Family", "Ocean"],
+        },
+        "21e": {
+          id: "21e",
+          title: "Moana",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/21e.png",
+          year: "2016",
+          rating: "PG",
+          descriptors: ["Animation", "Musical", "Adventure", "Polynesia"],
+        },
+
+        // Row 22 expansions
+        "22b": {
+          id: "22b",
+          title: "Demon Slayer",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/22b.png",
+          year: "2019–Present",
+          rating: "TV-MA",
+          descriptors: ["Anime", "Action", "Demons", "Historical Fantasy"],
+        },
+        "22c": {
+          id: "22c",
+          title: "Attack on Titan",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/22c.png",
+          year: "2013–2023",
+          rating: "TV-MA",
+          descriptors: ["Anime", "Dark", "Fantasy", "Violent"],
+        },
+        "22d": {
+          id: "22d",
+          title: "One Piece",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/22d.png",
+          year: "1999–Present",
+          rating: "TV-14",
+          descriptors: ["Anime", "Pirates", "Adventure", "Long-Running"],
+        },
+        "22e": {
+          id: "22e",
+          title: "Death Note",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/22e.png",
+          year: "2006–2007",
+          rating: "TV-14",
+          descriptors: ["Anime", "Supernatural", "Psychological", "Crime"],
+        },
+
+        // Row 23 expansions
+        "23b": {
+          id: "23b",
+          title: "Bohemian Rhapsody",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/23b.png",
+          year: "2018",
+          rating: "PG-13",
+          descriptors: ["Music", "Biography", "Queen", "Freddie Mercury"],
+        },
+        "23c": {
+          id: "23c",
+          title: "Rocketman",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/23c.png",
+          year: "2019",
+          rating: "R",
+          descriptors: ["Music", "Biography", "Elton John", "Musical Drama"],
+        },
+        "23d": {
+          id: "23d",
+          title: "Lincoln",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/23d.png",
+          year: "2012",
+          rating: "PG-13",
+          descriptors: ["Historical", "Biography", "Civil War", "Politics"],
+        },
+        "23e": {
+          id: "23e",
+          title: "Walk the Line",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/23e.png",
+          year: "2005",
+          rating: "PG-13",
+          descriptors: ["Music", "Biography", "Johnny Cash", "Romance"],
+        },
+
+        // Row 24 expansions
+        "24b": {
+          id: "24b",
+          title: "Gone Girl",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/24b.png",
+          year: "2014",
+          rating: "R",
+          descriptors: ["Thriller", "Mystery", "Marriage", "Twist"],
+        },
+        "24c": {
+          id: "24c",
+          title: "Shutter Island",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/24c.png",
+          year: "2010",
+          rating: "R",
+          descriptors: ["Psychological", "Thriller", "Scorsese", "Twist"],
+        },
+        "24d": {
+          id: "24d",
+          title: "Yellowjackets",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/24d.png",
+          year: "2021-Present",
+          rating: "TV-MA",
+          descriptors: ["Psychological", "Drama", "Survival", "Flashbacks"],
+        },
+        "24e": {
+          id: "24e",
+          title: "Fight Club",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/24e.png",
+          year: "1999",
+          rating: "R",
+          descriptors: ["Thriller", "Intense", "Provacative", "Twist"],
+        },
+
+        // Row 25 expansions
+        "25b": {
+          id: "25b",
+          title: "Futurama",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/25b.png",
+          year: "1999–2013 / 2023–",
+          rating: "TV-14",
+          descriptors: ["Animated", "Sci-Fi", "Comedy", "Satire"],
+        },
+        "25c": {
+          id: "25c",
+          title: "South Park",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/25c.png",
+          year: "1999–Present",
+          rating: "TV-14",
+          descriptors: ["Animated", "Outrageous", "Satire", "Comedy"],
+        },
+        "25d": {
+          id: "25d",
+          title: "Family Guys",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/25d.png",
+          year: "2009–Present",
+          rating: "TV-MA",
+          descriptors: ["Animated", "Comedy", "Satire", "Dysfunctional Family"],
+        },
+        "25e": {
+          id: "25e",
+          title: "Scavengers Reign",
+          image: "https://raw.githubusercontent.com/nuzzlecut/assets/main/25e.png",
+          year: "2023-2023",
+          rating: "TV-MA",
+          descriptors: ["Anime", "Thrilling", "Mysterious", "Survival"],
+        },
+        
+      };
+      
+      /* ------------------------------------------------------------------ */
+      /* MASTER APP                                                         */
+      /* ------------------------------------------------------------------ */
+      function App() {
+        const [mainSel, setMainSel] = React.useState([]);
+        const [sportSel, setSportSel] = React.useState([]);
+        const [page, setPage] = React.useState(0);
+      
+        React.useEffect(() => {
+  function onKey(e) {
+    // e.key is already lowercase for un-modified letter keys in most browsers,
+    // but doing a toLowerCase() is safest for “B” vs “b”.
+    if (e.key.toLowerCase() === "b" && page > 0) {
+      setPage(p => p - 1);
+    }
+  }
+
+  window.addEventListener("keydown", onKey);
+  return () => window.removeEventListener("keydown", onKey);
+}, [page]);
+        function resetAll() {
+          setMainSel([]);
+          setSportSel([]);
+          setPage(0);
+        }
+      
+        return (
+          <div style={{ position: "relative", width: 1920, height: 1080 }}>
+            {page === 0 && 
+              <Page1 onNavigateNext={p => { setMainSel(p); setPage(1); }} selectedInit={mainSel} />}
+            {page === 1 && 
+              <SportsSelectionPage onNextPressed={p => { setSportSel(p); setPage(2); }} selectedInit={sportSel} />}
+            {page === 2 && 
+              <FinalPage mainSelections={mainSel} sportsSelections={sportSel} resetAll={resetAll} />}
+          </div>
+        );
+      }
+      
+      ReactDOM.render(<App />, document.getElementById("root"));
+    </script>
+  </body>
+</html>
